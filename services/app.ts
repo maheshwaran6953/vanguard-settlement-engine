@@ -1,13 +1,42 @@
+import express               from 'express';
 import { checkDbConnection } from '../core/database/pool';
-import { env } from '../core/config/env';
+import { env }               from '../core/config/env';
+import { invoiceRouter }     from './routes/invoice/invoice.router';
+import { healthRouter }      from './routes/health/health.router';
+import { errorHandler }      from './middleware/error-handler';
 
+const app = express();
+
+// ------------------------------------------------------------------
+// Global middleware
+// ------------------------------------------------------------------
+app.use(express.json());           // parse JSON request bodies
+
+// ------------------------------------------------------------------
+// Routes
+// ------------------------------------------------------------------
+app.use('/health',   healthRouter);
+app.use('/invoices', invoiceRouter);
+
+// ------------------------------------------------------------------
+// Error handler — must be registered LAST, after all routes
+// ------------------------------------------------------------------
+app.use(errorHandler);
+
+// ------------------------------------------------------------------
+// Bootstrap
+// ------------------------------------------------------------------
 async function bootstrap(): Promise<void> {
-    console.log(`🚀 Starting ${env.APP_NAME} in ${env.NODE_ENV} mode`);
-    await checkDbConnection();
-    console.log(`✅ Bootstrap complete. Listening on port ${env.PORT}`);
+  console.log(`🚀 Starting ${env.APP_NAME} in ${env.NODE_ENV} mode`);
+  await checkDbConnection();
+
+  app.listen(env.PORT, () => {
+    console.log(`✅ Server listening on port ${env.PORT}`);
+    console.log(`   Health: http://localhost:${env.PORT}/health`);
+  });
 }
 
 bootstrap().catch((err) => {
-    console.error('Fatal bootstrap error:', err);
-    process.exit(1);
+  console.error('Fatal bootstrap error:', err);
+  process.exit(1);
 });

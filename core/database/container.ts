@@ -1,8 +1,13 @@
-import { pool } from './pool';
-import { InvoiceRepository } from '../repositories/invoice.repository';
-import { EventRepository }   from '../repositories/event.repository';
+import { pool }               from './pool';
+import { InvoiceRepository }  from '../repositories/invoice.repository';
+import { EventRepository }    from '../repositories/event.repository';
+import { InvoiceService }     from '../services/invoice.service';
 
-// Single shared instances — repositories are stateless,
-// so one instance per process is correct and efficient.
 export const invoiceRepository = new InvoiceRepository(pool);
 export const eventRepository   = new EventRepository(pool);
+
+// Service layer — depends on repositories, not on pool directly
+export const invoiceService = new InvoiceService(
+    invoiceRepository,
+    eventRepository,
+);

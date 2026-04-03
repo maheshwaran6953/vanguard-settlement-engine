@@ -4,6 +4,7 @@ import { env }               from '../core/config/env';
 import { invoiceRouter }     from './routes/invoice/invoice.router';
 import { healthRouter }      from './routes/health/health.router';
 import { errorHandler }      from './middleware/error-handler';
+import { vanRouter } from './routes/van/van.router';
 
 const app = express();
 
@@ -22,6 +23,8 @@ app.use('/invoices', invoiceRouter);
 // Error handler — must be registered LAST, after all routes
 // ------------------------------------------------------------------
 app.use(errorHandler);
+
+app.use('/vans', vanRouter);
 
 // ------------------------------------------------------------------
 // Bootstrap

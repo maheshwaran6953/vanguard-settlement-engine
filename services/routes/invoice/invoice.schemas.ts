@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 export const SubmitInvoiceSchema = z.object({
   invoice_number: z.string().min(1).max(50),
-  supplier_id:    z.string().trim(),
   buyer_id:       z.string().trim(),
   amount_cents:   z.number().int().positive(),
   currency:       z.string().length(3).default('INR'),

@@ -17,6 +17,9 @@ const envSchema = z.object({
     NODE_ENV:    z.enum(['development', 'test', 'production']),
     PORT:        z.coerce.number().int().default(3000),
     APP_NAME:    z.string().default('vanguard-settlement-engine'),
+    JWT_SECRET:      z.string().min(32),
+    JWT_EXPIRES_IN:  z.string().default('8h'),
+    BCRYPT_ROUNDS:   z.coerce.number().int().default(12),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -6,6 +6,7 @@ import { healthRouter }      from './routes/health/health.router';
 import { errorHandler }      from './middleware/error-handler';
 import { vanRouter } from './routes/van/van.router';
 import { riskRouter } from './routes/risk/risk.router';
+import { authRouter } from './routes/auth/auth.router';
 
 const app = express();
 
@@ -28,6 +29,8 @@ app.use(errorHandler);
 app.use('/vans', vanRouter);
 
 app.use('/risk', riskRouter);
+
+app.use('/auth', authRouter);
 
 // ------------------------------------------------------------------
 // Bootstrap

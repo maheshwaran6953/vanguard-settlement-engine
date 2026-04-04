@@ -5,6 +5,17 @@ import { VanRepository }      from '../repositories/van.repository';
 import { InvoiceService }     from '../services/invoice.service';
 import { VanService }         from '../services/van.service';
 import { RiskService } from '../services/risk/risk.service';
+import { AuthRepository }        from '../repositories/auth.repository';
+import { OrganisationRepository } from '../repositories/organisation.repository';
+import { AuthService }            from '../services/auth.service';
+
+export const authRepository = new AuthRepository(pool);
+export const orgRepository  = new OrganisationRepository(pool);
+
+export const authService = new AuthService(
+    authRepository,
+    orgRepository,
+);
 
 export const invoiceRepository = new InvoiceRepository(pool);
 export const eventRepository   = new EventRepository(pool);

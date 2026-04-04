@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev":   "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --ext ts --exec ts-node services/app.ts",
+    "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --ext ts --exec ts-node services/app.ts",
     "build": "tsc",
     "start": "node dist/services/app.js"
   },
@@ -24,14 +24,18 @@
   },
   "homepage": "https://github.com/maheshwaran6953/vanguard-settlement-engine#readme",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.20.0",
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
     "@types/pg": "^8.20.0",
     "@types/uuid": "^10.0.0",

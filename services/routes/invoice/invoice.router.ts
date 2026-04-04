@@ -1,18 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { invoiceService }        from '../../../core/database/container';
+import { invoiceService } from '../../../core/database/container';
 import {
   SubmitInvoiceSchema,
   ApproveInvoiceSchema,
-  RequestFinancingSchema,
 } from './invoice.schemas';
+import { authenticate, requireRole } from '../../middleware/authenticate';
 
 export const invoiceRouter = Router();
 
-// ------------------------------------------------------------------
-// Utility: wraps async route handlers so thrown errors
-// are forwarded to the Express error handler automatically.
-// Without this, unhandled promise rejections crash the process.
-// ------------------------------------------------------------------
 function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ) {
@@ -21,73 +16,66 @@ function asyncHandler(
   };
 }
 
-// ------------------------------------------------------------------
-// POST /invoices
-// Submit a new invoice. Actor is the supplier.
-// ------------------------------------------------------------------
+// POST /invoices — Only suppliers can submit
 invoiceRouter.post(
   '/',
+  authenticate,
+  requireRole('supplier'),
   asyncHandler(async (req, res) => {
     const body = SubmitInvoiceSchema.parse(req.body);
+    const actorId = req.user!.sub; // ID comes from verified JWT
 
-    // In Step 7 (Auth), actorId will come from req.user.id (JWT).
-    // For now we derive it from the request body.
-    const actorId = body.supplier_id;
-
-    const invoice = await invoiceService.submitInvoice(body, actorId);
-
+    const invoice = await invoiceService.submitInvoice(
+      { ...body, supplier_id: actorId },
+      actorId
+    );
     res.status(201).json({ success: true, data: invoice });
   })
 );
 
-// ------------------------------------------------------------------
-// GET /invoices/:id
-// Fetch invoice with full audit trail.
-// ------------------------------------------------------------------
+// GET /invoices/:id — Requires authentication
 invoiceRouter.get(
   '/:id',
+  authenticate,
   asyncHandler(async (req, res) => {
-    const id = req.params.id as string; // Force cast to string
-    const result = await invoiceService.getInvoiceHistory(id);
-
+    const result = await invoiceService.getInvoiceHistory(req.params.id as string);
     res.status(200).json({ success: true, data: result });
   })
 );
 
-// ------------------------------------------------------------------
-// POST /invoices/:id/approve
-// Buyer digitally approves the invoice.
-// ------------------------------------------------------------------
+// POST /invoices/:id/approve — Only buyers
 invoiceRouter.post(
   '/:id/approve',
+  authenticate,
+  requireRole('buyer'),
   asyncHandler(async (req, res) => {
-    const id = req.params.id as string;
     const body = ApproveInvoiceSchema.parse(req.body);
+    const actorId = req.user!.sub;
 
     const invoice = await invoiceService.approveInvoice(
-    { invoice_id: id, ...body },
-    body.buyer_id
+      { 
+        invoice_id: req.params.id as string, 
+        buyer_id: actorId, 
+        buyer_signature: body.buyer_signature 
+      },
+      actorId
     );
-
     res.status(200).json({ success: true, data: invoice });
   })
-  
 );
 
-// ------------------------------------------------------------------
-// POST /invoices/:id/request-financing
-// Supplier requests working capital advance.
-// ------------------------------------------------------------------
+// POST /invoices/:id/request-financing — Only suppliers
 invoiceRouter.post(
   '/:id/request-financing',
+  authenticate,
+  requireRole('supplier'),
   asyncHandler(async (req, res) => {
-    const id = req.params.id as string;
-    const body = RequestFinancingSchema.parse(req.body);
-    const invoice = await invoiceService.requestFinancing(
-    { invoice_id: id, supplier_id: body.supplier_id },
-    body.supplier_id
-    );
+    const actorId = req.user!.sub;
 
+    const invoice = await invoiceService.requestFinancing(
+      { invoice_id: req.params.id as string, supplier_id: actorId },
+      actorId
+    );
     res.status(200).json({ success: true, data: invoice });
   })
 );

@@ -8,6 +8,9 @@ import {
   InvoiceWithHistory,
 } from './invoice.service.types';
 import { Invoice }           from '../domain/entities';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('InvoiceService');
 
 // ------------------------------------------------------------------
 // Custom error types — callers can distinguish business rule
@@ -148,7 +151,14 @@ export class InvoiceService {
       );
 
       await client.query('COMMIT');
-      return submitted;
+      log.info(
+        { invoice_id: submitted.id,
+          invoice_number: submitted.invoice_number,
+          amount_cents: submitted.amount_cents,
+          supplier_id: submitted.supplier_id },
+          'Invoice submitted successfully'
+        );
+        return submitted;
 
     } catch (err) {
       await client.query('ROLLBACK');
@@ -225,6 +235,10 @@ export class InvoiceService {
       );
 
       await client.query('COMMIT');
+      log.info(
+        { invoice_id: approved.id, buyer_id: cmd.buyer_id },
+        'Invoice approved by buyer'
+      );
       return approved;
 
     } catch (err) {
@@ -289,6 +303,10 @@ export class InvoiceService {
       );
 
       await client.query('COMMIT');
+      log.info(
+        { invoice_id: updated.id, amount_cents: invoice.amount_cents },
+        'Financing requested'
+      );
       return updated;
 
     } catch (err) {

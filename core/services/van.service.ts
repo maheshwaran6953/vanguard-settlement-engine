@@ -1,5 +1,5 @@
-import { pool }            from '../database/pool';
-import { IVanRepository }  from '../repositories/van.repository';
+import { pool }               from '../database/pool';
+import { IVanRepository }     from '../repositories/van.repository';
 import { IInvoiceRepository } from '../repositories/invoice.repository';
 import { IEventRepository }   from '../repositories/event.repository';
 import {
@@ -7,7 +7,10 @@ CreateVanCommand,
 RecordPaymentCommand,
 VanWithLedger,
 } from './van.service.types';
-import { VirtualAccount }  from '../domain/entities';
+import { VirtualAccount }     from '../domain/entities';
+import { createLogger }       from '../utils/logger';
+
+const log = createLogger('VanService');
 
 // PostgreSQL unique violation error code
 const PG_UNIQUE_VIOLATION = '23505';
@@ -43,15 +46,14 @@ constructor(
 // ----------------------------------------------------------------
 // createVan
 // Called immediately after an invoice reaches FINANCING_REQUESTED.
-// Generates a unique virtual account number for this invoice.
 //
 // Business rules:
-//   1. Invoice must be in FINANCING_REQUESTED status
-//   2. No VAN must already exist for this invoice (1-to-1 enforced
-//      by DB UNIQUE constraint on virtual_accounts.invoice_id)
+//   1. Invoice must exist and be in FINANCING_REQUESTED status
+//   2. No VAN may already exist for this invoice (1-to-1)
 //   3. VAN expires after 90 days — standard invoice payment term
 // ----------------------------------------------------------------
 async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
+    log.info({ invoice_id: cmd.invoice_id }, 'Creating VAN for invoice');
 
     const invoice = await this.invoiceRepo.findById(cmd.invoice_id);
     if (!invoice) {
@@ -70,14 +72,9 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
     throw new VanAlreadyExistsError(cmd.invoice_id);
     }
 
-    // Generate a unique virtual account number.
-    // Format: VSE + 8-digit timestamp suffix + 4-digit random
-    // In production, this number comes from your banking partner's
-    // VAN issuance API (e.g. YES Bank, RazorpayX).
     const accountNumber = this.generateAccountNumber();
-    const ifscCode      = 'YESB0CMSNOC';   // YES Bank CMS IFSC
+    const ifscCode      = 'YESB0CMSNOC';
 
-    // VAN expires 90 days from now — aligns with invoice due_date window
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 90);
 
@@ -97,9 +94,8 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
         client
     );
 
-    // Record the disbursement debit — the platform is
-    // advancing funds TO the supplier. This is money going OUT
-    // of the platform's pool.
+    // Record the disbursement debit — money going OUT of the
+    // platform's capital pool to the supplier as an advance.
     await this.vanRepo.appendLedgerEntry(
         {
         virtual_account_id: van.id,
@@ -115,22 +111,34 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
         {
         invoice_id: cmd.invoice_id,
         event_type: 'van.created',
-        payload:    {
-            virtual_account_id: van.id,
-            account_number:     accountNumber,
-            ifsc_code:          ifscCode,
+        payload: {
+            virtual_account_id:    van.id,
+            account_number:        accountNumber,
+            ifsc_code:             ifscCode,
             expected_amount_cents: cmd.expected_amount_cents,
-            expires_at:         expiresAt.toISOString(),
+            expires_at:            expiresAt.toISOString(),
         },
         },
         client
     );
 
     await client.query('COMMIT');
+
+    log.info(
+        {
+        invoice_id:     cmd.invoice_id,
+        van_id:         van.id,
+        account_number: accountNumber,
+        expires_at:     expiresAt.toISOString(),
+        },
+        'VAN created successfully'
+    );
+
     return van;
 
     } catch (err) {
     await client.query('ROLLBACK');
+    log.error({ err, invoice_id: cmd.invoice_id }, 'Failed to create VAN');
     throw err;
     } finally {
     client.release();
@@ -139,121 +147,178 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
 
 // ----------------------------------------------------------------
 // recordPayment
-// Called by the bank webhook handler when the buyer's payment
-// arrives into the virtual account.
+// Called by the bank webhook when the buyer's payment arrives.
 //
-// This is the most critical method in the platform.
-// It must be:
-//   - Idempotent: same webhook twice = same result, no double-credit
-//   - Atomic:     ledger entry + amount update in one transaction
-//   - Correct:    auto-settle when received >= expected
+// Defence-in-depth idempotency strategy (two layers):
+//
+// Layer 1 — Application check (before transaction):
+//   Query existing ledger entries and compare idempotency keys.
+//   Catches duplicates without acquiring a DB transaction,
+//   which is cheaper and avoids lock contention under high load.
+//   This also correctly handles the case where the account is
+//   already settled — a retry after settlement must still return
+//   success, not an error.
+//
+// Layer 2 — Database constraint (inside transaction):
+//   The UNIQUE constraint on ledger_entries.idempotency_key is
+//   the final guard. If two webhook requests pass Layer 1
+//   simultaneously (race condition), only one INSERT succeeds.
+//   The loser gets a PG_UNIQUE_VIOLATION, caught below and
+//   re-thrown as DuplicatePaymentError.
 // ----------------------------------------------------------------
 async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
-    // 1. Fetch the account
+    log.info(
+    { account_number: cmd.account_number, amount_cents: cmd.amount_cents,
+        idempotency_key: cmd.idempotency_key },
+    'Recording payment webhook'
+    );
+
     const van = await this.vanRepo.findByAccountNumber(cmd.account_number);
     if (!van) {
-        throw new VanNotFoundError(cmd.account_number);
+    throw new VanNotFoundError(cmd.account_number);
     }
 
-    // 2. Check for expiry first
     if (van.status === 'expired') {
-        throw new Error(`Virtual account ${cmd.account_number} has expired`);
+    throw new Error(
+        `Virtual account ${cmd.account_number} has expired`
+    );
     }
 
-    // 3. IDEMPOTENCY CHECK: Direct Database lookup is safer than .find()
-    const entries = await this.vanRepo.getLedgerEntries(van.id);
-    const isDuplicate = entries.some(e => 
-        String(e.idempotency_key).trim() === String(cmd.idempotency_key).trim()
+    // Layer 1: Application-level idempotency check.
+    // Checked before the settled guard so that retried webhooks
+    // arriving after settlement still return success rather than
+    // throwing "already settled".
+    const existingEntries = await this.vanRepo.getLedgerEntries(van.id);
+    const isDuplicate = existingEntries.some(
+    (e) => String(e.idempotency_key).trim() ===
+            String(cmd.idempotency_key).trim()
     );
 
     if (isDuplicate) {
-        // This is the "Magic" fix: If it's a duplicate, we STOP here and return success
-        // to the router, regardless of whether the account is settled or not.
-        throw new DuplicatePaymentError(cmd.idempotency_key);
+    log.info(
+        { idempotency_key: cmd.idempotency_key, van_id: van.id },
+        'Duplicate payment webhook — already processed, returning success'
+    );
+    throw new DuplicatePaymentError(cmd.idempotency_key);
     }
 
-    // 4. NOW check for settled status. 
-    // If we are here, it's NOT a duplicate, so we should reject new money.
+    // Only reject new money on a settled account.
+    // (Duplicates are handled above regardless of settled status.)
     if (van.status === 'settled') {
-        throw new Error(`Virtual account ${cmd.account_number} is already settled`);
+    throw new Error(
+        `Virtual account ${cmd.account_number} is already settled`
+    );
     }
 
     const client = await pool.connect();
+
     try {
-        await client.query('BEGIN');
+    await client.query('BEGIN');
 
-        // Append the ledger entry
-        await this.vanRepo.appendLedgerEntry(
-            {
-                virtual_account_id: van.id,
-                entry_type:         'credit',
-                amount_cents:       cmd.amount_cents,
-                description:        `Buyer payment received on ${cmd.paid_at.toISOString()}`,
-                idempotency_key:    cmd.idempotency_key,
+    await this.vanRepo.appendLedgerEntry(
+        {
+        virtual_account_id: van.id,
+        entry_type:         'credit',
+        amount_cents:       cmd.amount_cents,
+        description:        `Buyer payment received on ${cmd.paid_at.toISOString()}`,
+        idempotency_key:    cmd.idempotency_key,
+        },
+        client
+    );
+
+    // Atomic SQL-level increment — safe against concurrent webhooks.
+    // A read-modify-write pattern would lose one update under
+    // concurrent load. The += in SQL is atomic at the engine level.
+    const updated = await this.vanRepo.updateReceivedAmount(
+        van.id,
+        cmd.amount_cents,
+        client
+    );
+
+    let finalVan = updated;
+
+    if (
+        Number(updated.received_amount_cents) >=
+        Number(updated.expected_amount_cents)
+    ) {
+        finalVan = await this.vanRepo.settleAccount(van.id, client);
+
+        await client.query(
+        `UPDATE invoices
+        SET status = 'REPAID', updated_at = now()
+        WHERE id = $1`,
+        [van.invoice_id]
+        );
+
+        await this.eventRepo.append(
+        {
+            invoice_id: van.invoice_id,
+            event_type: 'invoice.repaid',
+            payload: {
+            virtual_account_id:    van.id,
+            received_amount_cents: updated.received_amount_cents,
+            idempotency_key:       cmd.idempotency_key,
+            settled_at:            new Date().toISOString(),
             },
-            client
+        },
+        client
         );
 
-        // Atomic update
-        const updated = await this.vanRepo.updateReceivedAmount(
-            van.id,
-            cmd.amount_cents,
-            client
+        log.info(
+        { van_id: van.id, invoice_id: van.invoice_id },
+        'VAN fully settled — invoice marked REPAID'
         );
+    }
 
-        let finalVan = updated;
-        // Check if we need to settle
-        if (Number(updated.received_amount_cents) >= Number(updated.expected_amount_cents)) {
-            finalVan = await this.vanRepo.settleAccount(van.id, client);
+    await client.query('COMMIT');
 
-            await client.query(
-                `UPDATE invoices SET status = 'REPAID', updated_at = now() WHERE id = $1`,
-                [van.invoice_id]
-            );
+    const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
 
-            await this.eventRepo.append(
-                {
-                    invoice_id: van.invoice_id,
-                    event_type: 'invoice.repaid',
-                    payload: {
-                        virtual_account_id:    van.id,
-                        received_amount_cents: updated.received_amount_cents,
-                        idempotency_key:       cmd.idempotency_key,
-                        settled_at:            new Date().toISOString(),
-                    },
-                },
-                client
-            );
-        }
+    log.info(
+        {
+        van_id:          van.id,
+        amount_cents:    cmd.amount_cents,
+        is_fully_settled: finalVan.status === 'settled',
+        },
+        'Payment recorded successfully'
+    );
 
-        await client.query('COMMIT');
-        const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
-
-        return {
-            virtual_account:  finalVan,
-            ledger_entries:   ledgerEntries,
-            is_fully_settled: finalVan.status === 'settled',
-        };
+    return {
+        virtual_account:  finalVan,
+        ledger_entries:   ledgerEntries,
+        is_fully_settled: finalVan.status === 'settled',
+    };
 
     } catch (err: unknown) {
-        await client.query('ROLLBACK');
-        // Final fallback: If a race condition happened and two requests hit the DB
-        // at the exact same microsecond, the DB UNIQUE constraint will save us.
-        if (
-            typeof err === 'object' && err !== null && 'code' in err &&
-            (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
-            throw new DuplicatePaymentError(cmd.idempotency_key);
-        }
-        throw err;
+    await client.query('ROLLBACK');
+
+    // Layer 2: DB constraint catches the rare concurrent duplicate
+    // that slipped past the application-level check.
+    if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === PG_UNIQUE_VIOLATION
+    ) {
+        log.warn(
+        { idempotency_key: cmd.idempotency_key },
+        'DB unique constraint caught concurrent duplicate payment'
+        );
+        throw new DuplicatePaymentError(cmd.idempotency_key);
+    }
+
+    log.error(
+        { err, account_number: cmd.account_number },
+        'Failed to record payment'
+    );
+    throw err;
     } finally {
-        client.release();
+    client.release();
     }
 }
 
 // ----------------------------------------------------------------
-// getVanDetails
-// Read-only. Returns VAN state with full ledger for reconciliation.
+// getVanDetails — read-only reconciliation view
 // ----------------------------------------------------------------
 async getVanDetails(invoiceId: string): Promise<VanWithLedger> {
     const van = await this.vanRepo.findByInvoiceId(invoiceId);
@@ -262,6 +327,7 @@ async getVanDetails(invoiceId: string): Promise<VanWithLedger> {
     }
 
     const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
+
     return {
     virtual_account:  van,
     ledger_entries:   ledgerEntries,
@@ -269,10 +335,6 @@ async getVanDetails(invoiceId: string): Promise<VanWithLedger> {
     };
 }
 
-// ----------------------------------------------------------------
-// Private: account number generation
-// In production, call your banking partner's VAN issuance API here.
-// ----------------------------------------------------------------
 private generateAccountNumber(): string {
     const timestamp = Date.now().toString().slice(-8);
     const random    = Math.floor(1000 + Math.random() * 9000).toString();

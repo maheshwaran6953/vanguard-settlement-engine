@@ -5,6 +5,7 @@ import {
   UnauthorisedActorError,
   InvalidTransitionError,
 } from '../../core/services/invoice.service';
+import { InvoiceNotEligibleError } from '../../core/services/risk/risk.service';
 
 // Every error in this system flows through here.
 // The shape of every error response is identical — callers
@@ -71,6 +72,14 @@ export function errorHandler(
     res.status(400).json({
       success: false,
       error: { code: 'BAD_REQUEST', message: err.message },
+    });
+    return;
+  }
+  
+  if (err instanceof InvoiceNotEligibleError) {
+    res.status(409).json({
+      success: false,
+      error: { code: 'INVALID_TRANSITION', message: err.message },
     });
     return;
   }

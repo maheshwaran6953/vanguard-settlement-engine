@@ -1,51 +1,28 @@
-import express               from 'express';
-import { checkDbConnection } from '../core/database/pool';
-import { env }               from '../core/config/env';
-import { invoiceRouter }     from './routes/invoice/invoice.router';
-import { healthRouter }      from './routes/health/health.router';
-import { errorHandler }      from './middleware/error-handler';
-import { vanRouter } from './routes/van/van.router';
-import { riskRouter } from './routes/risk/risk.router';
-import { authRouter } from './routes/auth/auth.router';
+import express            from 'express';
+import { requestLogger }  from './middleware/request-logger';
+import { errorHandler }   from './middleware/error-handler';
+import { authRouter }     from './routes/auth/auth.router';
+import { invoiceRouter }  from './routes/invoice/invoice.router';
+import { vanRouter }      from './routes/van/van.router';
+import { riskRouter }     from './routes/risk/risk.router';
+import { healthRouter }   from './routes/health/health.router';
 
-const app = express();
+export function buildApp() {
+  const app = express();
 
-// ------------------------------------------------------------------
-// Global middleware
-// ------------------------------------------------------------------
-app.use(express.json());           // parse JSON request bodies
+  // ── Global middleware ──────────────────────────────────────────
+  app.use(express.json());
+  app.use(requestLogger);        // structured HTTP logging
 
-// ------------------------------------------------------------------
-// Routes
-// ------------------------------------------------------------------
-app.use('/health',   healthRouter);
-app.use('/invoices', invoiceRouter);
+  // ── Routes ────────────────────────────────────────────────────
+  app.use('/health',   healthRouter);
+  app.use('/auth',     authRouter);
+  app.use('/invoices', invoiceRouter);
+  app.use('/vans',     vanRouter);
+  app.use('/risk',     riskRouter);
 
-// ------------------------------------------------------------------
-// Error handler — must be registered LAST, after all routes
-// ------------------------------------------------------------------
-app.use(errorHandler);
+  // ── Error handler — always last ───────────────────────────────
+  app.use(errorHandler);
 
-app.use('/vans', vanRouter);
-
-app.use('/risk', riskRouter);
-
-app.use('/auth', authRouter);
-
-// ------------------------------------------------------------------
-// Bootstrap
-// ------------------------------------------------------------------
-async function bootstrap(): Promise<void> {
-  console.log(`🚀 Starting ${env.APP_NAME} in ${env.NODE_ENV} mode`);
-  await checkDbConnection();
-
-  app.listen(env.PORT, () => {
-    console.log(`✅ Server listening on port ${env.PORT}`);
-    console.log(`   Health: http://localhost:${env.PORT}/health`);
-  });
+  return app;
 }
-
-bootstrap().catch((err) => {
-  console.error('Fatal bootstrap error:', err);
-  process.exit(1);
-});

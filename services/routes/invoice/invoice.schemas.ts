@@ -9,7 +9,6 @@ export const SubmitInvoiceSchema = z.object({
 });
 
 export const ApproveInvoiceSchema = z.object({
-  buyer_id:        z.string().trim(),
   buyer_signature: z.string().min(10),
 });
 

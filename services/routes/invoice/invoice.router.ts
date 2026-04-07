@@ -5,6 +5,7 @@ import {
   ApproveInvoiceSchema,
 } from './invoice.schemas';
 import { authenticate, requireRole } from '../../middleware/authenticate';
+import { idempotencyGuard } from '../../middleware/idempotency';
 
 export const invoiceRouter = Router();
 
@@ -21,6 +22,7 @@ invoiceRouter.post(
   '/',
   authenticate,
   requireRole('supplier'),
+  idempotencyGuard,
   asyncHandler(async (req, res) => {
     const body = SubmitInvoiceSchema.parse(req.body);
     const actorId = req.user!.sub; // ID comes from verified JWT

@@ -5,7 +5,10 @@ import {
   UnauthorisedActorError,
   InvalidTransitionError,
 } from '../../core/services/invoice.service';
-import { InvoiceNotEligibleError } from '../../core/services/risk/risk.service';
+import { InvalidCredentialsError, AccountInactiveError } from '../../core/services/auth.service';
+import { createLogger } from '../../core/utils/logger';
+
+const log = createLogger('ErrorHandler');
 
 // Every error in this system flows through here.
 // The shape of every error response is identical — callers
@@ -27,6 +30,22 @@ export function errorHandler(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ): void {
+
+  if (err instanceof InvalidCredentialsError) {
+    res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: err.message },
+    });
+    return;
+  }
+
+  if (err instanceof AccountInactiveError) {
+    res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: err.message },
+    });
+    return;
+  }
 
   // --- Zod validation failure (malformed request body) ---
   if (err instanceof ZodError) {

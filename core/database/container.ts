@@ -8,9 +8,11 @@ import { RiskService } from '../services/risk/risk.service';
 import { AuthRepository }        from '../repositories/auth.repository';
 import { OrganisationRepository } from '../repositories/organisation.repository';
 import { AuthService }            from '../services/auth.service';
+import { IdempotencyRepository } from '../repositories/idempotency.repository';
 
 export const authRepository = new AuthRepository(pool);
 export const orgRepository  = new OrganisationRepository(pool);
+export const idempotencyRepository = new IdempotencyRepository(pool);
 
 export const authService = new AuthService(
     authRepository,

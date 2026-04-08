@@ -51,6 +51,7 @@ invoiceRouter.post(
   authenticate,
   requireRole('buyer'),
   asyncHandler(async (req, res) => {
+    const { id } = req.params;
     const body = ApproveInvoiceSchema.parse(req.body);
     const actorId = req.user!.sub;
 

@@ -1,0 +1,117 @@
+Phase 3
+Resilience & Hardening
+▼
+3.1
+HTTP idempotency key middleware must
+Add an Idempotency-Key request header guard on POST /invoices. Cache responses keyed by that header so supplier apps can safely retry timed-out requests without creating duplicate invoices. Store keys with a TTL in Redis or a DB table.
+services/middleware/idempotency.ts · infra/db/migrations/V003__idempotency_keys.sql
+Build this step ↗
+3.2
+Rate limiting on auth endpoints must
+Install express-rate-limit. Apply strict limits to POST /auth/login (5 attempts per 15 minutes per IP) and POST /auth/register (10 per hour). Prevents brute-force credential attacks. Return 429 with Retry-After header.
+services/middleware/rate-limiter.ts · services/app.ts
+Build this step ↗
+3.3
+Webhook signature verification must
+POST /vans/webhook/payment is currently open to any caller. Add HMAC-SHA256 signature verification using a shared secret with your banking partner. Reject any webhook whose X-Webhook-Signature header does not match. Document the shared secret in .env.
+services/middleware/webhook-auth.ts · services/routes/van/van.router.ts
+Build this step ↗
+3.4
+HTTP security headers with helmet.js should
+Install helmet. Apply as global middleware in app.ts. Sets Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, and 10 other security headers in one line. Essential for any API that handles financial data.
+services/app.ts
+Build this step ↗
+3.5
+Schema validation alignment audit must
+Audit every Zod schema against the current JWT-aware route handlers. The approve endpoint bug revealed a class of drift. Check: SubmitInvoiceSchema (supplier_id should be absent — comes from JWT), RequestFinancingSchema (supplier_id absent), CreateVanSchema (no actor fields in body). Fix any that still accept fields now owned by the JWT.
+services/routes/invoice/invoice.schemas.ts · services/routes/van/van.schemas.ts · services/routes/risk/risk.schemas.ts
+Build this step ↗
+3.6
+ADR-0006 for resilience decisions should
+Write docs/adr/ADR-0006-resilience.md documenting the idempotency key design choice, the rate limiting thresholds, and the webhook authentication mechanism. Explain why each threshold was chosen.
+docs/adr/ADR-0006-resilience.md
+Build this step ↗
+Phase 4
+Async Infrastructure & Background Jobs
+▼
+4.1
+Redis container in docker-compose must
+Add a Redis 7 service to docker-compose.yml. Update .env.development and .env.test with REDIS_URL. Redis is the backbone for BullMQ job queues and optionally for idempotency key caching from Phase 3.
+docker-compose.yml · infra/config/.env.development · infra/config/.env.test
+Build this step ↗
+4.2
+BullMQ job queue foundation must
+Install BullMQ. Create a queue registry in infra/queue/. Define three named queues: notification.queue (emails), document.queue (PDF generation), risk.queue (async credit bureau calls). Create the worker runner file that processes jobs in a separate process from the HTTP server.
+infra/queue/queues.ts · infra/queue/worker.ts · infra/queue/registry.ts
+Build this step ↗
+4.3
+Invoice approval notification job must
+When an invoice reaches BUYER_APPROVED, enqueue a notification job instead of blocking the HTTP response. The job sends an email to the supplier confirming their invoice was approved. Use Nodemailer with a test SMTP server (Mailpit in Docker) for local dev. Shows async decoupling of HTTP from I/O.
+infra/queue/jobs/invoice-approved.job.ts · infra/email/mailer.ts · docker-compose.yml
+Build this step ↗
+4.4
+Settlement receipt PDF generation job should
+When an invoice reaches REPAID, enqueue a document job that generates a PDF settlement receipt using PDFKit. Store the PDF path in the invoice record. Demonstrates the document.queue and a real async processing pipeline with binary output.
+infra/queue/jobs/settlement-receipt.job.ts · infra/pdf/receipt-generator.ts · V004__pdf_storage.sql
+Build this step ↗
+4.5
+Dead letter queue and job retry policy should
+Configure BullMQ retry policy: 3 attempts with exponential backoff. Failed jobs after all retries move to a dead letter queue. Add a GET /admin/failed-jobs endpoint (platform_admin role only) to inspect failures. This demonstrates production job queue thinking.
+infra/queue/queues.ts · services/routes/admin/admin.router.ts
+Build this step ↗
+4.6
+ADR-0007 for async job architecture should
+Document why BullMQ over alternatives (SQS, pg-boss, Agenda). Document the three-queue design, retry policy reasoning, and why the worker runs in a separate process from the HTTP server.
+docs/adr/ADR-0007-async-jobs.md
+Phase 5
+Advanced Testing & CI/CD Pipeline
+▼
+5.1
+Unit tests for the risk engine must
+The risk engine is a pure function — it is the easiest and most valuable thing to unit test. Write tests covering all three decision paths (APPROVE, MANUAL_REVIEW, REJECT), every anomaly flag threshold, and the buyer risk score components. No DB, no HTTP, just function input/output. Target 100% branch coverage on the engine.
+tests/unit/risk-engine.test.ts · tests/unit/three-way-match.test.ts · tests/unit/anomaly.test.ts
+Build this step ↗
+5.2
+Unit tests for the invoice state machine must
+Test the VALID_TRANSITIONS map exhaustively. Every valid transition should pass assertValidTransition. Every invalid transition should throw InvalidTransitionError. Every terminal state (REPAID, DEFAULTED, CANCELLED) should reject all transitions. These are fast, deterministic, and demonstrate rigour.
+tests/unit/invoice-state-machine.test.ts
+Build this step ↗
+5.3
+GitHub Actions CI pipeline must
+Create .github/workflows/ci.yml. On every push to any branch: spin up a postgres:16 service container, run npm install, npx tsc --noEmit, npm test. On PR to develop or main: also run npm run build. The green checkmark on every PR is what makes the repo look professional to a recruiter browsing GitHub.
+.github/workflows/ci.yml
+Build this step ↗
+5.4
+Test coverage reporting should
+Add Jest coverage collection to jest.config.ts. Generate an HTML coverage report. Add a coverage badge to the README showing current percentage. Set a minimum coverage threshold (70%) that fails CI if dropped below. Shows discipline.
+jest.config.ts · README.md
+5.5
+Integration tests for Phase 3 and 4 features should
+Extend the Grand Tour test file with: a test that verifies rate limiting returns 429 after 5 failed logins, a test that verifies the idempotency key middleware deduplicates POST /invoices, a test that verifies webhook signature rejection returns 401.
+tests/integration/resilience.test.ts · tests/integration/async-jobs.test.ts
+Phase 6
+Portfolio Finalisation & Interview Preparation
+▼
+6.1
+Postman collection with full lifecycle must
+Create a Postman collection that runs the complete invoice lifecycle end-to-end with environment variables and chained requests (each response feeds the next request automatically). Export as vanguard-collection.json and commit to /docs. A recruiter or interviewer can clone and run it in 60 seconds.
+docs/vanguard-collection.json · docs/vanguard-environment.json
+Build this step ↗
+6.2
+OpenAPI / Swagger spec must
+Generate a complete OpenAPI 3.0 spec for all routes. Either use tsoa to generate from TypeScript decorators, or write the YAML manually. Mount Swagger UI at GET /docs so any developer can explore the API interactively. This is the single most visible signal of API professionalism.
+docs/openapi.yaml · services/app.ts
+Build this step ↗
+6.3
+README final polish must
+Update README with: CI badge (GitHub Actions), test coverage badge, link to Swagger UI, link to Postman collection, updated architecture diagram reflecting Phase 3 and 4 additions (rate limiter, job queue, Redis). The README must be completable in under 5 minutes by a new developer.
+README.md
+6.4
+Interview preparation brief must
+A structured document covering: the 10 most likely technical interview questions about this project with model answers, the 5 architectural decisions you made and the trade-offs you consciously accepted, how to walk an interviewer through the codebase in 10 minutes, and what you would build next if given another sprint.
+docs/interview-prep.md
+Generate this now ↗
+6.5
+Final merge to main and GitHub release tag must
+Merge develop into main via PR. Create a GitHub release tag v1.0.0 with a release description summarising what the platform does, the tech stack, and the key engineering patterns. The release tag is what you link to on your CV and LinkedIn.
+GitHub release · git tag v1.0.0

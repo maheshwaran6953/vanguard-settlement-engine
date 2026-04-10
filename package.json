@@ -7,6 +7,10 @@
     "doc": "docs"
   },
   "scripts": {
+    "dev": "nodemon --watch \"services/**/*.ts\" --watch \"core/**/*.ts\" --watch \"infra/**/*.ts\" --ext ts --exec ts-node services/server.ts",
+    "test": "set NODE_ENV=test&& jest --forceExit",
+    "test:watch": "set NODE_ENV=test&& jest --watch --forceExit"
+
     "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
     "build": "tsc",
     "start": "node dist/services/server.js",
@@ -48,6 +52,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
+
     "@types/helmet": "^0.0.48",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
@@ -56,6 +61,7 @@
     "@types/pino-http": "^5.8.4",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+
     "cross-env": "^10.1.0",
     "jest": "^30.3.0",
     "nodemon": "^3.1.14",

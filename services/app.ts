@@ -1,3 +1,6 @@
+import express from 'express';
+import helmet  from 'helmet';
+import { apiLimiter }    from './middleware/rate-limiter';
 import express          from 'express';
 import helmet           from 'helmet';
 import { apiLimiter }   from './middleware/rate-limiter';
@@ -11,6 +14,46 @@ import { healthRouter }  from './routes/health/health.router';
 
 export function buildApp() {
   const app = express();
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc:     ["'none'"],
+        scriptSrc:      ["'none'"],
+        styleSrc:       ["'none'"],
+        imgSrc:         ["'none'"],
+        connectSrc:     ["'self'"],
+        frameAncestors: ["'none'"],
+        formAction:     ["'none'"],
+      },
+    },
+    strictTransportSecurity: {
+      maxAge: 31_536_000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard:     { action: 'deny' },
+    hidePoweredBy:  true,
+    noSniff:        true,
+    referrerPolicy: { policy: 'no-referrer' },
+  }));
+
+  // Apply express.json() to every route EXCEPT the webhook endpoint.
+  // The webhook route uses captureRawBody instead, which must read
+  // the raw stream before any JSON parsing occurs. If express.json()
+  // runs first it consumes the stream and captureRawBody gets nothing.
+  app.use((req, _res, next) => {
+  
+    if (req.originalUrl.includes('/webhook/payment')) {
+      next();
+      return;
+    }
+    express.json()(req, _res, next);
+  });
+
+  app.use(apiLimiter);
+  app.use(requestLogger);
+
 
   // ── Security headers ────────────────────────────────────────────
   // helmet() sets 14 HTTP response headers that defend against
@@ -87,8 +130,8 @@ export function buildApp() {
   app.use('/vans',     vanRouter);
   app.use('/risk',     riskRouter);
 
+
   // ── Error handler — must be last ────────────────────────────────
   app.use(errorHandler);
-
   return app;
 }

@@ -1,0 +1,45 @@
+version: '3.9'
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: vanguard_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       vanguard_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume — data persists across `docker-compose down` and restarts.
+      # Use `docker-compose down -v` to wipe the database intentionally.
+      - vanguard_postgres_data:/var/lib/postgresql/data
+      # Auto-run migrations on first container start.
+      # Files in docker-entrypoint-initdb.d/ execute in filename order
+      # only when the data directory is empty (i.e. first boot).
+      - ./infra/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vanguard_db"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+      start_period: 10s
+
+  # Jaeger — optional, for local distributed trace visualisation.
+  # Access the UI at http://localhost:16686 after `docker-compose up`.
+  # Comment this service out if you do not need trace visualisation.
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: vanguard_jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP collector (matches tracing.ts)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+volumes:
+  vanguard_postgres_data:
+    driver: local

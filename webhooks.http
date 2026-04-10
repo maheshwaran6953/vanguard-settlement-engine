@@ -1,0 +1,38 @@
+@baseUrl = http://localhost:3000
+@secret = vanguard-webhook-secret-dev-32-chars-min
+
+### Test 1: No signature (expect 401)
+POST {{baseUrl}}/vans/webhook/payment
+Content-Type: application/json
+
+{
+  "account_number": "VSE123",
+  "amount_cents": 500000,
+  "idempotency_key": "t1",
+  "paid_at": "2026-07-01T10:00:00Z"
+}
+
+### Test 2: Wrong signature (expect 401)
+POST {{baseUrl}}/vans/webhook/payment
+Content-Type: application/json
+X-Webhook-Signature: deadbeefdeadbeefdeadbeefdeadbeef
+
+{
+  "account_number": "VSE123",
+  "amount_cents": 500000,
+  "idempotency_key": "t2",
+  "paid_at": "2026-07-01T10:00:00Z"
+}
+
+### Test 3: Correct signature (expect 404)
+# Generate signature manually or use script
+POST {{baseUrl}}/vans/webhook/payment
+Content-Type: application/json
+X-Webhook-Signature: {{$dotenv SIGNATURE}}
+
+{
+  "account_number": "VSE123",
+  "amount_cents": 500000,
+  "idempotency_key": "t3",
+  "paid_at": "2026-07-01T10:00:00Z"
+}

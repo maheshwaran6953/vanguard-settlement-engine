@@ -20,6 +20,7 @@ const envSchema = z.object({
     JWT_SECRET:      z.string().min(32),
     JWT_EXPIRES_IN:  z.string().default('8h'),
     BCRYPT_ROUNDS:   z.coerce.number().int().default(12),
+    WEBHOOK_SECRET: z.string().min(32),
 });
 
 const parsed = envSchema.safeParse(process.env);

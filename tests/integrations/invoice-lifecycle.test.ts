@@ -1,39 +1,3 @@
-// CRITICAL: db.helper must be the first import.
-// It loads .env.test before the pool initialises.
-import {
-  cleanDatabase,
-  closeDatabase,
-} from '../helpers/db.helper';
-
-import { api, registerAndLogin } from '../helpers/request.helper';
-import { pool }                  from '../../core/database/pool';
-import { describe, it, expect, beforeEach, afterAll } from '@jest/globals';
-
-// ----------------------------------------------------------------
-// THE GRAND TOUR
-// This test suite walks the complete financial lifecycle of a
-// single invoice from registration through to virtual account
-// creation. Every assertion reflects a real business guarantee
-// this platform makes.
-// ----------------------------------------------------------------
-describe('Invoice Financing Lifecycle — Grand Tour', () => {
-
-  beforeEach(async () => {
-    await cleanDatabase();
-  });
-
-  afterAll(async () => {
-    await closeDatabase();
-  });
-
-  // --------------------------------------------------------------
-  // THE HAPPY PATH
-  // Full lifecycle: Register → Submit → Approve →
-  //   Request Financing → Risk Assessment → Create VAN
-  // --------------------------------------------------------------
-  it('completes the full invoice financing lifecycle', async () => {
-
-    // ── Step 1: Register organisations ──────────────────────────
 // tests/integration/invoice-lifecycle.test.ts
 //
 // CRITICAL IMPORT ORDER — do not change.
@@ -42,6 +6,7 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
 // development DB credentials and all tests hit the wrong database.
 
 import path   from 'path';
+import { describe, it, expect, beforeEach, afterAll } from '@jest/globals';
 import dotenv from 'dotenv';
 
 dotenv.config({
@@ -53,7 +18,6 @@ dotenv.config({
 import supertest          from 'supertest';
 import { buildApp }       from '../../services/app';
 import { pool }           from '../../core/database/pool';
-import { describe, it, expect, beforeEach, afterAll } from '@jest/globals';
 
 // ----------------------------------------------------------------
 // Test infrastructure
@@ -156,8 +120,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
     expect(supplierId).toBeDefined();
     expect(buyerId).toBeDefined();
 
-    // ── Step 2: Supplier submits invoice ────────────────────────
-
     // Step 2: Supplier submits invoice
     const submitRes = await api
       .post('/invoices')
@@ -165,22 +127,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       .send({
         invoice_number: 'INV-GRAND-TOUR-001',
         buyer_id:       buyerId,
-        amount_cents:   1_000_000,    // ₹10,000.00
-        currency:       'INR',
-        due_date:       '2026-12-31',
-      })
-      .expect(201);
-
-    const invoice = submitRes.body.data;
-    expect(invoice.status).toBe('SUBMITTED');
-    expect(invoice.supplier_id).toBe(supplierId);  // from JWT, not body
-    expect(invoice.buyer_id).toBe(buyerId);
-    expect(+invoice.amount_cents).toBe(1_000_000);
-
-    const invoiceId = invoice.id;
-
-    // ── Step 3: Buyer approves with digital signature ───────────
-
         amount_cents:   1_000_000,
         currency:       'INR',
         due_date:       '2026-12-31',
@@ -209,10 +155,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       .set('Authorization', `Bearer ${buyerToken}`)
       .send({
         buyer_signature: 'sha256-integration-test-buyer-signature-abc',
-      })
-      .expect(200)
-    expect(approveRes.body.data.status).toBe('BUYER_APPROVED');
-
       });
 
     expect(approveRes.status).toBe(200);
@@ -220,16 +162,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
     expect(approveRes.body.data.buyer_signature).toBe(
       'sha256-integration-test-buyer-signature-abc'
     );
-
-    // ── Step 4: Supplier requests financing ─────────────────────
-    const financingRes = await api
-      .post(`/invoices/${invoiceId}/request-financing`)
-      .set('Authorization', `Bearer ${supplierToken}`)
-      .expect(200);
-
-    expect(financingRes.body.data.status).toBe('FINANCING_REQUESTED');
-
-    // ── Step 5: Risk assessment — APPROVE path ──────────────────
 
     // Step 4: Supplier requests financing
     const financingRes = await api
@@ -263,18 +195,12 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
           days_until_due:           90,
           prior_default_count:      0,
         },
-      })
-      .expect(200);
-
-
       });
 
     expect(riskRes.status).toBe(200);
     expect(riskRes.body.data.decision).toBe('APPROVE');
     expect(riskRes.body.data.three_way_match.passed).toBe(true);
     expect(riskRes.body.data.anomaly_result.flags).toHaveLength(0);
-
-    // ── Step 6: Create Virtual Account Number ───────────────────
 
     // Step 6: Create Virtual Account Number
     const vanRes = await api
@@ -283,10 +209,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       .send({
         invoice_id:            invoiceId,
         expected_amount_cents: 1_000_000,
-      })
-      .expect(201);
-
-    const van = vanRes.body.data;
       });
 
     expect(vanRes.status).toBe(201);
@@ -302,11 +224,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
     expect(Number(van.expected_amount_cents)).toBe(1_000_000);
     expect(van.account_number).toMatch(/^VSE\d{12}$/);
 
-    // ── Step 7: Verify audit trail in the database ───────────────
-    // This is the assertion that proves event sourcing is working
-    // under real API conditions — not just in isolation.
-    const eventsResult = await pool.query(
-
     // Step 7: Verify audit trail directly in the database.
     // This is the assertion that proves event sourcing works
     // under real HTTP conditions — not just in unit isolation.
@@ -317,9 +234,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       [invoiceId]
     );
 
-    const eventTypes = eventsResult.rows.map(
-      (r: { event_type: string }) => r.event_type
-    );
     const eventTypes = eventsResult.rows.map((r) => r.event_type);
 
     expect(eventTypes).toEqual([
@@ -330,10 +244,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       'van.created',
     ]);
 
-    // ── Step 8: Verify invoice status in the database ───────────
-    // Proves the HTTP response and DB state are in sync.
-    const invoiceResult = await pool.query(
-
     // Step 8: Verify invoice state in DB matches HTTP response
     const invoiceRow = await pool.query<{
       status:          string;
@@ -343,13 +253,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       [invoiceId]
     );
 
-    expect(invoiceResult.rows[0].status).toBe('FINANCING_REQUESTED');
-    expect(invoiceResult.rows[0].buyer_signature).toBe(
-      'sha256-integration-test-buyer-signature-abc'
-    );
-
-    // ── Step 9: Verify ledger has the advance debit entry ───────
-    const ledgerResult = await pool.query(
     expect(invoiceRow.rows[0]!.status).toBe('FINANCING_REQUESTED');
     expect(invoiceRow.rows[0]!.buyer_signature).toBe(
       'sha256-integration-test-buyer-signature-abc'
@@ -368,9 +271,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
     );
 
     expect(ledgerResult.rows).toHaveLength(1);
-    expect(ledgerResult.rows[0].entry_type).toBe('debit');
-    expect(Number(ledgerResult.rows[0].amount_cents)).toBe(1_000_000);
-    expect(ledgerResult.rows[0].idempotency_key).toBe(
     expect(ledgerResult.rows[0]!.entry_type).toBe('debit');
     expect(Number(ledgerResult.rows[0]!.amount_cents)).toBe(1_000_000);
     expect(ledgerResult.rows[0]!.idempotency_key).toBe(
@@ -379,10 +279,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
   });
 
   // --------------------------------------------------------------
-  // SECURITY: RBAC enforcement
-  // A supplier must not be able to approve their own invoice.
-  // This is a financial fraud vector — we test it explicitly.
-
   // SECURITY: RBAC — supplier cannot approve their own invoice
   // --------------------------------------------------------------
   it('prevents a supplier from approving their own invoice', async () => {
@@ -400,38 +296,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
         amount_cents:   500_000,
         currency:       'INR',
         due_date:       '2026-12-31',
-        buyer_signature: 'sha256-integration-test-buyer-signature-abc',
-      })
-      .expect(201);
-
-    const invoiceId = submitRes.body.data.id;
-
-    // Supplier attempts to approve using their own token
-    const approveRes = await api
-      .post(`/invoices/${invoiceId}/approve`)
-      .set('Authorization', `Bearer ${supplierToken}`)
-      .send({ buyer_signature: 'sha256-self-approval-fraud-attempt' })
-      .expect(403);
-
-    expect(approveRes.body.success).toBe(false);
-    expect(approveRes.body.error.code).toBe('FORBIDDEN');
-
-    // Verify invoice status was NOT changed in the database
-    const result = await pool.query(
-      `SELECT status FROM invoices WHERE id = $1`,
-      [invoiceId]
-    );
-    expect(result.rows[0].status).toBe('SUBMITTED');
-  });
-
-  // --------------------------------------------------------------
-  // STATE MACHINE: Invalid transition rejection
-  // An already-approved invoice cannot be approved again.
-  // --------------------------------------------------------------
-  it('rejects an invalid state machine transition', async () => {
-    const { supplierToken, buyerToken, buyerId }
-      = await registerAndLogin('supplier3@test.com', 'buyer3@test.com');
-
       });
 
     expect(submitRes.status).toBe(201);
@@ -472,26 +336,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
         amount_cents:   250_000,
         currency:       'INR',
         due_date:       '2026-12-31',
-      })
-      .expect(201);
-
-    const invoiceId = submitRes.body.data.id;
-
-    // First approval — should succeed
-    await api
-      .post(`/invoices/${invoiceId}/approve`)
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ buyer_signature: 'sha256-first-sig' })
-      .expect(200);
-
-    // Second approval — must be rejected
-    const secondApproval = await api
-      .post(`/invoices/${invoiceId}/approve`)
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ buyer_signature: 'sha256-second-sig' })
-      .expect(409);
-
-
       });
 
     expect(submitRes.status).toBe(201);
@@ -514,8 +358,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
   });
 
   // --------------------------------------------------------------
-  // RISK ENGINE: Three-way match failure rejects the invoice
-
   // RISK ENGINE: Three-way match failure cancels the invoice
   // --------------------------------------------------------------
   it('rejects an invoice that fails three-way match', async () => {
@@ -531,23 +373,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
         amount_cents:   1_000_000,
         currency:       'INR',
         due_date:       '2026-12-31',
-      })
-      .expect(201);
-
-    const invoiceId = submitRes.body.data.id;
-
-    await api
-      .post(`/invoices/${invoiceId}/approve`)
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ buyer_signature: 'sha256-risk-test-sig' })
-      .expect(200);
-
-    await api
-      .post(`/invoices/${invoiceId}/request-financing`)
-      .set('Authorization', `Bearer ${supplierToken}`)
-      .expect(200);
-
-    // Submit with PO amount that is 50% of invoice — fails ±2% check
       });
 
     expect(submitRes.status).toBe(201);
@@ -572,8 +397,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
         three_way_match_input: {
           invoice_id:            invoiceId,
           invoice_amount_cents:  1_000_000,
-          po_amount_cents:       500_000,   // 50% mismatch — instant reject
-
           po_amount_cents:       500_000,
           delivery_amount_cents: 1_000_000,
           po_number:             'PO-FRAUD-001',
@@ -590,24 +413,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
           days_until_due:           90,
           prior_default_count:      0,
         },
-      })
-      .expect(422);
-
-    expect(riskRes.body.data.decision).toBe('REJECT');
-    expect(riskRes.body.data.reason_code).toBe('THREE_WAY_MATCH_FAILED');
-
-    // Invoice must be CANCELLED in the database
-    const result = await pool.query(
-      `SELECT status FROM invoices WHERE id = $1`,
-      [invoiceId]
-    );
-    expect(result.rows[0].status).toBe('CANCELLED');
-
-    // Audit trail must contain the rejection event
-    const events = await pool.query(
-      `SELECT event_type FROM invoice_events
-       WHERE invoice_id = $1 AND event_type = 'risk.assessment.reject'`,
-
       });
 
     expect(riskRes.status).toBe(422);
@@ -632,14 +437,12 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
   });
 
   // --------------------------------------------------------------
-  // IDEMPOTENCY: Duplicate webhook returns 200, no double-credit
   // IDEMPOTENCY: Duplicate webhook — no double-credit
   // --------------------------------------------------------------
   it('handles duplicate payment webhooks idempotently', async () => {
     const { supplierToken, buyerToken, buyerId, supplierId }
       = await registerAndLogin('supplier5@test.com', 'buyer5@test.com');
 
-    // Build up to a VAN
     const submitRes = await api
       .post('/invoices')
       .set('Authorization', `Bearer ${supplierToken}`)
@@ -649,24 +452,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
         amount_cents:   500_000,
         currency:       'INR',
         due_date:       '2026-12-31',
-      })
-      .expect(201);
-
-    const invoiceId = submitRes.body.data.id;
-
-    await api
-      .post(`/invoices/${invoiceId}/approve`)
-      .set('Authorization', `Bearer ${buyerToken}`)
-      .send({ buyer_signature: 'sha256-idem-sig' })
-      .expect(200);
-
-    await api
-      .post(`/invoices/${invoiceId}/request-financing`)
-      .set('Authorization', `Bearer ${supplierToken}`)
-      .expect(200);
-
-    await api
-
       });
     expect(submitRes.status).toBe(201);
     const invoiceId = submitRes.body.data.id as string;
@@ -705,21 +490,12 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
           days_until_due:           90,
           prior_default_count:      0,
         },
-      })
-      .expect(200);
-
       });
     expect(riskRes.status).toBe(200);
 
     const vanRes = await api
       .post('/vans')
       .set('Authorization', `Bearer ${supplierToken}`)
-      .send({ invoice_id: invoiceId, expected_amount_cents: 500_000 })
-      .expect(201);
-
-    const accountNumber = vanRes.body.data.account_number;
-    const vanId         = vanRes.body.data.id;
-
       .send({ invoice_id: invoiceId, expected_amount_cents: 500_000 });
     expect(vanRes.status).toBe(201);
 
@@ -732,26 +508,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       idempotency_key: 'bank-txn-unique-ref-idem-001',
       paid_at:         '2026-07-01T10:00:00Z',
     };
-
-    // First webhook — must succeed and settle the account
-    const first = await api
-      .post('/vans/webhook/payment')
-      .send(webhookPayload)
-      .expect(200);
-
-    expect(first.body.data.is_fully_settled).toBe(true);
-
-    // Second identical webhook — must return 200, no double-credit
-    const second = await api
-      .post('/vans/webhook/payment')
-      .send(webhookPayload)
-      .expect(200);
-
-    expect(second.body.message).toBe('Payment already recorded');
-
-    // The ledger must have exactly 2 entries:
-    // 1 debit (advance) + 1 credit (payment) — never 3
-    const ledger = await pool.query(
 
     // First delivery — settles the account
     const first = await api
@@ -778,21 +534,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
     );
 
     expect(ledger.rows).toHaveLength(2);
-    expect(ledger.rows[0].entry_type).toBe('debit');
-    expect(ledger.rows[1].entry_type).toBe('credit');
-
-    // Invoice must be REPAID — not REPAID twice
-    const invoice = await pool.query(
-      `SELECT status FROM invoices WHERE id = $1`,
-      [invoiceId]
-    );
-    expect(invoice.rows[0].status).toBe('REPAID');
-  });
-
-  // --------------------------------------------------------------
-  // VALIDATION: Malformed requests are rejected before touching
-  // the service layer
-
     expect(ledger.rows[0]!.entry_type).toBe('debit');
     expect(ledger.rows[1]!.entry_type).toBe('credit');
 
@@ -810,10 +551,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
   it('rejects unauthenticated requests with 401', async () => {
     const res = await api
       .post('/invoices')
-      .send({ invoice_number: 'INV-UNAUTH-001' })
-      .expect(401);
-
-
       .send({ invoice_number: 'INV-UNAUTH-001' });
 
     expect(res.status).toBe(401);
@@ -831,11 +568,6 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       .set('Authorization', `Bearer ${supplierToken}`)
       .send({
         invoice_number: 'INV-VALID-001',
-        // missing buyer_id, amount_cents, due_date
-      })
-      .expect(400);
-
-
         // buyer_id, amount_cents, due_date intentionally missing
       });
 

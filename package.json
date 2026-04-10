@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "nodemon --watch \"services/**/*.ts\" --watch \"core/**/*.ts\" --watch \"infra/**/*.ts\" --ext ts --exec ts-node services/server.ts",
     "test": "set NODE_ENV=test&& jest --forceExit",
-    "test:watch": "set NODE_ENV=test&& jest --watch --forceExit"
+    "test:watch": "set NODE_ENV=test&& jest --watch --forceExit",
 
     "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
     "build": "tsc",

@@ -10,6 +10,12 @@
     "dev": "nodemon --watch \"services/**/*.ts\" --watch \"core/**/*.ts\" --watch \"infra/**/*.ts\" --ext ts --exec ts-node services/server.ts",
     "test": "set NODE_ENV=test&& jest --forceExit",
     "test:watch": "set NODE_ENV=test&& jest --watch --forceExit"
+
+    "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
+    "build": "tsc",
+    "start": "node dist/services/server.js",
+    "test": "cross-env NODE_ENV=test jest --forceExit",
+    "test:watch": "NODE_ENV=test jest --watch --forceExit"
   },
   "repository": {
     "type": "git",
@@ -34,6 +40,8 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
@@ -44,6 +52,8 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
+
+    "@types/helmet": "^0.0.48",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
@@ -51,6 +61,8 @@
     "@types/pino-http": "^5.8.4",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+
+    "cross-env": "^10.1.0",
     "jest": "^30.3.0",
     "nodemon": "^3.1.14",
     "pino-pretty": "^13.1.3",

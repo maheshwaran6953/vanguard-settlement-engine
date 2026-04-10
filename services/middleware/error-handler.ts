@@ -12,6 +12,15 @@ import {
 import {
   InvoiceNotEligibleError,
 } from '../../core/services/risk/risk.service';
+import { InvalidCredentialsError, AccountInactiveError } from '../../core/services/auth.service';
+import { createLogger } from '../../core/utils/logger';
+import { InvoiceNotEligibleError } from '../../core/services/risk/risk.service';
+
+const log = createLogger('ErrorHandler');
+
+// Every error in this system flows through here.
+// The shape of every error response is identical — callers
+// can always expect { success: false, error: { code, message } }
 
 // --- VAN Service errors ---
 import {
@@ -71,6 +80,23 @@ export function errorHandler(
 
   // --- 400: Zod validation failure ---
   // Malformed or missing fields in the request body.
+  if (err instanceof InvalidCredentialsError) {
+    res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: err.message },
+    });
+    return;
+  }
+
+  if (err instanceof AccountInactiveError) {
+    res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: err.message },
+    });
+    return;
+  }
+
+  // --- Zod validation failure (malformed request body) ---
   if (err instanceof ZodError) {
     send(res, 400, 'VALIDATION_ERROR',
       'Request body failed validation',

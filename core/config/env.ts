@@ -21,6 +21,11 @@ const envSchema = z.object({
     JWT_EXPIRES_IN:  z.string().default('8h'),
     BCRYPT_ROUNDS:   z.coerce.number().int().default(12),
     WEBHOOK_SECRET: z.string().min(32),
+    REDIS_URL:              z.string().url(),
+    REDIS_JOB_QUEUE_PREFIX: z.string().min(1).default('vanguard'),
+    SMTP_HOST:              z.string().min(1),
+    SMTP_PORT:              z.coerce.number().int().positive(),
+    SMTP_FROM:              z.string().email(),
 });
 
 const parsed = envSchema.safeParse(process.env);

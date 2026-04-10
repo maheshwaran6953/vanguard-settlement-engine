@@ -12,9 +12,7 @@ import {
 import {
   InvoiceNotEligibleError,
 } from '../../core/services/risk/risk.service';
-import { InvalidCredentialsError, AccountInactiveError } from '../../core/services/auth.service';
 import { createLogger } from '../../core/utils/logger';
-import { InvoiceNotEligibleError } from '../../core/services/risk/risk.service';
 
 const log = createLogger('ErrorHandler');
 

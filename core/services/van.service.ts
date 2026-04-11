@@ -1,3 +1,4 @@
+import { Queue }               from 'bullmq';
 import { pool }               from '../database/pool';
 import { IVanRepository }     from '../repositories/van.repository';
 import { IInvoiceRepository } from '../repositories/invoice.repository';
@@ -9,6 +10,8 @@ VanWithLedger,
 } from './van.service.types';
 import { VirtualAccount }     from '../domain/entities';
 import { createLogger }       from '../utils/logger';
+import { JOB_TYPES }           from '../../infra/queue/registry';
+import { SettlementReceiptPdfPayload } from '../../infra/queue/job-payloads';
 
 const log = createLogger('VanService');
 
@@ -36,12 +39,14 @@ constructor(invoiceId: string) {
 }
 }
 
+
 export class VanService {
-constructor(
-    private readonly vanRepo:     IVanRepository,
-    private readonly invoiceRepo: IInvoiceRepository,
-    private readonly eventRepo:   IEventRepository,
-) {}
+    constructor(
+        private readonly vanRepo:      IVanRepository,
+        private readonly invoiceRepo:  IInvoiceRepository,
+        private readonly eventRepo:    IEventRepository,
+        private readonly documentQueue: Queue,
+    ) {}
 
 // ----------------------------------------------------------------
 // createVan
@@ -235,6 +240,7 @@ async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
         client
     );
 
+    // Auto-settle when full expected amount received
     let finalVan = updated;
 
     if (
@@ -264,10 +270,35 @@ async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
         client
         );
 
-        log.info(
-        { van_id: van.id, invoice_id: van.invoice_id },
-        'VAN fully settled — invoice marked REPAID'
+        await client.query('COMMIT');
+
+        // ── Enqueue PDF generation AFTER commit ───────────────────
+        const invoice = await this.invoiceRepo.findById(van.invoice_id);
+        if (invoice) {
+        const payload: SettlementReceiptPdfPayload = {
+            invoice_id:     invoice.id,
+            invoice_number: invoice.invoice_number,
+            supplier_id:    invoice.supplier_id,
+            buyer_id:       invoice.buyer_id,
+            amount_cents:   invoice.amount_cents,
+            currency:       invoice.currency,
+            settled_at:     new Date().toISOString(),
+        };
+
+        await this.documentQueue.add(
+            JOB_TYPES.SETTLEMENT_RECEIPT_PDF,
+            payload,
+            { jobId: `receipt-${invoice.id}` }
         );
+
+        log.info(
+            { invoice_id: invoice.id },
+            'Settlement receipt PDF job enqueued'
+        );
+        }
+
+    } else {
+        await client.query('COMMIT');
     }
 
     await client.query('COMMIT');

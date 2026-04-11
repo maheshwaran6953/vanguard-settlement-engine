@@ -134,21 +134,20 @@ export function verifyWebhookSignature(
     });
     return;
   }
-
+  
   const isValid = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
-
+  
   if (!isValid) {
     log.warn({ path: req.path, ip: req.ip }, 'Webhook signature invalid');
     res.status(401).json({
       success: false,
       error: {
         code:    'INVALID_WEBHOOK_SIGNATURE',
-        message: 'Webhook signature verification failed',
+        message: `FAILED. Expected: ${expectedSignature}`,
       },
     });
     return;
   }
-
   log.debug({ path: req.path }, 'Webhook signature verified');
   next();
 }

@@ -7,12 +7,12 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev":        "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
-    "worker":     "ts-node infra/queue/worker.ts",
+    "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
+    "worker": "ts-node infra/queue/worker.ts",
     "worker:dev": "nodemon --watch 'infra/queue/**/*.ts' --ext ts --exec ts-node infra/queue/worker.ts",
-    "build":      "tsc",
-    "start":      "node dist/services/server.js",
-    "test":       "cross-env NODE_ENV=test jest --forceExit"
+    "build": "tsc",
+    "start": "node dist/services/server.js",
+    "test": "cross-env NODE_ENV=test jest --forceExit"
   },
   "repository": {
     "type": "git",
@@ -43,6 +43,7 @@
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^8.0.5",
+    "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
@@ -57,6 +58,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
     "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "^0.17.5",
     "@types/pg": "^8.20.0",
     "@types/pino-http": "^5.8.4",
     "@types/supertest": "^7.2.0",

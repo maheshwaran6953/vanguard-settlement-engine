@@ -1,6 +1,8 @@
+import { Queue }                  from 'bullmq';
 import { pool }              from '../database/pool';
 import { IInvoiceRepository} from '../repositories/invoice.repository';
 import { IEventRepository }  from '../repositories/event.repository';
+import { IOrganisationRepository } from '../repositories/organisation.repository';
 import {
   SubmitInvoiceCommand,
   ApproveInvoiceCommand,
@@ -9,6 +11,8 @@ import {
 } from './invoice.service.types';
 import { Invoice }           from '../domain/entities';
 import { createLogger } from '../utils/logger';
+import { JOB_TYPES }              from '../../infra/queue/registry';
+import { InvoiceApprovedPayload } from '../../infra/queue/job-payloads';
 
 const log = createLogger('InvoiceService');
 
@@ -70,6 +74,8 @@ export class InvoiceService {
   constructor(
     private readonly invoiceRepo: IInvoiceRepository,
     private readonly eventRepo:   IEventRepository,
+    private readonly orgRepo:     IOrganisationRepository,
+    private readonly notificationQueue: Queue,
   ) {}
 
   // ----------------------------------------------------------------
@@ -179,16 +185,13 @@ export class InvoiceService {
   //   4. buyer_signature must be provided (cryptographic proof)
   // ----------------------------------------------------------------
   async approveInvoice(
-    cmd: ApproveInvoiceCommand,
+    cmd:     ApproveInvoiceCommand,
     actorId: string
   ): Promise<Invoice> {
 
     const invoice = await this.invoiceRepo.findById(cmd.invoice_id);
-    if (!invoice) {
-      throw new InvoiceNotFoundError(cmd.invoice_id);
-    }
+    if (!invoice) throw new InvoiceNotFoundError(cmd.invoice_id);
 
-    // Security check — the actor must be the buyer on this invoice
     if (invoice.buyer_id !== cmd.buyer_id) {
       throw new UnauthorisedActorError(
         'Only the designated buyer can approve this invoice'
@@ -206,7 +209,6 @@ export class InvoiceService {
     try {
       await client.query('BEGIN');
 
-      // Attach the buyer's signature to the invoice record
       await client.query(
         `UPDATE invoices
          SET buyer_signature = $1, updated_at = now()
@@ -215,16 +217,14 @@ export class InvoiceService {
       );
 
       const approved = await this.invoiceRepo.updateStatus(
-        invoice.id,
-        'BUYER_APPROVED',
-        client
+        invoice.id, 'BUYER_APPROVED', client
       );
 
       await this.eventRepo.append(
         {
           invoice_id: invoice.id,
           event_type: 'invoice.buyer_approved',
-          payload:    {
+          payload: {
             buyer_id:        cmd.buyer_id,
             buyer_signature: cmd.buyer_signature,
             approved_at:     new Date().toISOString(),
@@ -235,10 +235,51 @@ export class InvoiceService {
       );
 
       await client.query('COMMIT');
+
+      // ── Enqueue notification AFTER commit ──────────────────────
+      // If enqueued inside the transaction and commit fails, the
+      // worker would process a job for an invoice that was never
+      // actually approved. Post-commit enqueue is always correct.
+      const supplier = await this.orgRepo.findById(invoice.supplier_id);
+      const supplierCredential = await client.query<{ email: string }>(
+        `SELECT email FROM organisation_credentials WHERE org_id = $1 LIMIT 1`,
+        [invoice.supplier_id]
+      );
+      const supplierEmail = supplierCredential.rows[0]?.email ?? '';
+
+      if (supplierEmail) {
+        const payload: InvoiceApprovedPayload = {
+          invoice_id:     invoice.id,
+          invoice_number: invoice.invoice_number,
+          supplier_id:    invoice.supplier_id,
+          supplier_email: supplierEmail,
+          buyer_id:       invoice.buyer_id,
+          amount_cents:   invoice.amount_cents,
+          currency:       invoice.currency,
+          due_date:       invoice.due_date.toISOString(),
+          approved_at:    new Date().toISOString(),
+        };
+
+        await this.notificationQueue.add(
+          JOB_TYPES.INVOICE_APPROVED,
+          payload,
+          { jobId: `invoice-approved-${invoice.id}` }
+          // jobId deduplication: if approveInvoice is called twice
+          // for the same invoice (shouldn't happen due to state machine
+          // but defensive), only one notification is sent.
+        );
+
+        log.info(
+          { invoice_id: invoice.id, supplier_email: supplierEmail },
+          'Invoice approved notification job enqueued'
+        );
+      }
+
       log.info(
         { invoice_id: approved.id, buyer_id: cmd.buyer_id },
         'Invoice approved by buyer'
       );
+
       return approved;
 
     } catch (err) {

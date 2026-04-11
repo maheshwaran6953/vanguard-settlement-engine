@@ -50,6 +50,7 @@ export function buildApp() {
   app.use(apiLimiter);
   app.use(requestLogger);
 
+  app.use('/api/v1/auth', authRouter);
   app.use('/health',   healthRouter);
   app.use('/auth',     authRouter);
   app.use('/invoices', invoiceRouter);

@@ -31,38 +31,41 @@ ADR-0006 for resilience decisions should
 Write docs/adr/ADR-0006-resilience.md documenting the idempotency key design choice, the rate limiting thresholds, and the webhook authentication mechanism. Explain why each threshold was chosen.
 docs/adr/ADR-0006-resilience.md
 Build this step ↗
-Phase 4
-Async Infrastructure & Background Jobs
-▼
-4.1
-Redis container in docker-compose must
-Add a Redis 7 service to docker-compose.yml. Update .env.development and .env.test with REDIS_URL. Redis is the backbone for BullMQ job queues and optionally for idempotency key caching from Phase 3.
-docker-compose.yml · infra/config/.env.development · infra/config/.env.test
-Build this step ↗
-4.2
-BullMQ job queue foundation must
-Install BullMQ. Create a queue registry in infra/queue/. Define three named queues: notification.queue (emails), document.queue (PDF generation), risk.queue (async credit bureau calls). Create the worker runner file that processes jobs in a separate process from the HTTP server.
-infra/queue/queues.ts · infra/queue/worker.ts · infra/queue/registry.ts
-Build this step ↗
-4.3
-Invoice approval notification job must
-When an invoice reaches BUYER_APPROVED, enqueue a notification job instead of blocking the HTTP response. The job sends an email to the supplier confirming their invoice was approved. Use Nodemailer with a test SMTP server (Mailpit in Docker) for local dev. Shows async decoupling of HTTP from I/O.
-infra/queue/jobs/invoice-approved.job.ts · infra/email/mailer.ts · docker-compose.yml
-Build this step ↗
-4.4
-Settlement receipt PDF generation job should
-When an invoice reaches REPAID, enqueue a document job that generates a PDF settlement receipt using PDFKit. Store the PDF path in the invoice record. Demonstrates the document.queue and a real async processing pipeline with binary output.
-infra/queue/jobs/settlement-receipt.job.ts · infra/pdf/receipt-generator.ts · V004__pdf_storage.sql
-Build this step ↗
-4.5
-Dead letter queue and job retry policy should
-Configure BullMQ retry policy: 3 attempts with exponential backoff. Failed jobs after all retries move to a dead letter queue. Add a GET /admin/failed-jobs endpoint (platform_admin role only) to inspect failures. This demonstrates production job queue thinking.
-infra/queue/queues.ts · services/routes/admin/admin.router.ts
-Build this step ↗
-4.6
-ADR-0007 for async job architecture should
-Document why BullMQ over alternatives (SQS, pg-boss, Agenda). Document the three-queue design, retry policy reasoning, and why the worker runs in a separate process from the HTTP server.
-docs/adr/ADR-0007-async-jobs.md
+    Phase 4
+    Async Infrastructure & Background Jobs
+    ▼
+    4.1
+    Redis container in docker-compose must
+    Add a Redis 7 service to docker-compose.yml. Update .env.development and .env.test with REDIS_URL. Redis is the backbone for BullMQ job queues and optionally for idempotency key caching from Phase 3.
+    docker-compose.yml · infra/config/.env.development · infra/config/.env.test
+    Build this step ↗
+    4.2
+    BullMQ job queue foundation must
+    Install BullMQ. Create a queue registry in infra/queue/. Define three named queues: notification.queue (emails), document.queue (PDF generation), risk.queue (async credit bureau calls). Create the worker runner file that processes jobs in a separate process from the HTTP server.
+    infra/queue/queues.ts · infra/queue/worker.ts · infra/queue/registry.ts
+    Build this step ↗
+    4.3
+    Invoice approval notification job must
+    When an invoice reaches BUYER_APPROVED, enqueue a notification job instead of blocking the HTTP response. The job sends an email to the supplier confirming their invoice was approved. Use Nodemailer with a test SMTP server (Mailpit in Docker) for local dev. Shows async decoupling of HTTP from I/O.
+    infra/queue/jobs/invoice-approved.job.ts · infra/email/mailer.ts · docker-compose.yml
+    Build this step ↗
+    4.4
+    Settlement receipt PDF generation job should
+    When an invoice reaches REPAID, enqueue a document job that generates a PDF settlement receipt using PDFKit. Store the PDF path in the invoice record. Demonstrates the document.queue and a real async processing pipeline with binary output.
+    infra/queue/jobs/settlement-receipt.job.ts · infra/pdf/receipt-generator.ts · V004__pdf_storage.sql
+    Build this step ↗
+    4.5
+    Dead letter queue and job retry policy should
+    Configure BullMQ retry policy: 3 attempts with exponential backoff. Failed jobs after all retries move to a dead letter queue. Add a GET /admin/failed-jobs endpoint (platform_admin role only) to inspect failures. This demonstrates production job queue thinking.
+    infra/queue/queues.ts · services/routes/admin/admin.router.ts
+    Build this step ↗
+    4.6
+    ADR-0007 for async job architecture should
+    Document why BullMQ over alternatives (SQS, pg-boss, Agenda). Document the three-queue design, retry policy reasoning, and why the worker runs in a separate process from the HTTP server.
+    docs/adr/ADR-0007-async-jobs.md
+
+
+
 Phase 5
 Advanced Testing & CI/CD Pipeline
 ▼
@@ -89,6 +92,8 @@ jest.config.ts · README.md
 Integration tests for Phase 3 and 4 features should
 Extend the Grand Tour test file with: a test that verifies rate limiting returns 429 after 5 failed logins, a test that verifies the idempotency key middleware deduplicates POST /invoices, a test that verifies webhook signature rejection returns 401.
 tests/integration/resilience.test.ts · tests/integration/async-jobs.test.ts
+
+
 Phase 6
 Portfolio Finalisation & Interview Preparation
 ▼

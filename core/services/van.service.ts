@@ -275,15 +275,15 @@ async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
         // ── Enqueue PDF generation AFTER commit ───────────────────
         const invoice = await this.invoiceRepo.findById(van.invoice_id);
         if (invoice) {
-        const payload: SettlementReceiptPdfPayload = {
-            invoice_id:     invoice.id,
-            invoice_number: invoice.invoice_number,
-            supplier_id:    invoice.supplier_id,
-            buyer_id:       invoice.buyer_id,
-            amount_cents:   invoice.amount_cents,
-            currency:       invoice.currency,
-            settled_at:     new Date().toISOString(),
-        };
+            const payload: SettlementReceiptPdfPayload = {
+                invoice_id:     invoice.id,        // ← confirm this line exists exactly
+                invoice_number: invoice.invoice_number,
+                supplier_id:    invoice.supplier_id,
+                buyer_id:       invoice.buyer_id,
+                amount_cents:   invoice.amount_cents,
+                currency:       invoice.currency,
+                settled_at:     new Date().toISOString(),
+            };
 
         await this.documentQueue.add(
             JOB_TYPES.SETTLEMENT_RECEIPT_PDF,

@@ -43,7 +43,7 @@ if (!fs.existsSync(STORAGE_ROOT)) {
     fs.mkdirSync(STORAGE_ROOT, { recursive: true });
 }
 
-const filename     = `receipt-${data.invoice_id}-${Date.now()}.pdf`;
+const filename = `receipt-${data.invoice_id}-${Date.now()}.pdf`;
 const absolutePath = path.join(STORAGE_ROOT, filename);
 const relativePath = path.join('storage', 'receipts', filename);
 

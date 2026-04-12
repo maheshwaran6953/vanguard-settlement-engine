@@ -10,6 +10,7 @@ import { logger }           from '../core/utils/logger';
 import { checkDbConnection } from '../core/database/pool';
 import { env }              from '../core/config/env';
 import { buildApp }         from './app';
+import { closeQueues }      from '../infra/queue/queues';
 
 async function bootstrap(): Promise<void> {
 logger.info('Starting Vanguard Settlement Engine...');
@@ -19,11 +20,21 @@ logger.info('Database connection established');
 
 const app = buildApp();
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
     logger.info(
     { port: env.PORT, env: env.NODE_ENV },
     `Server listening on port ${env.PORT}`
     );
+});
+
+// Graceful shutdown — close queues before HTTP server stops
+process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received — shutting down gracefully');
+    server.close(async () => {
+    await closeQueues();
+    logger.info('Server and queues shut down cleanly');
+    process.exit(0);
+    });
 });
 }
 

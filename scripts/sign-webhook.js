@@ -28,10 +28,10 @@ if (!secret) {
 // character into the Thunder Client body field.
 // ----------------------------------------------------------------
 const payload = {
-  account_number:  'VSE289962373920',   // replace with your actual VAN number
+  account_number:  'VSE_REPLACE_WITH_ACTUAL_VAN_NUMBER',   // replace with your actual VAN number
   amount_cents:    500000,
-  idempotency_key: 'TRIGGER_PDF_SUCCESS_1',
-  paid_at:         '2026-04-11T10:00:00.000Z',
+  idempotency_key: `smoke_test_${Date.now()}`,
+  paid_at:         new Date().toISOString(),
 };
 
 // JSON.stringify with no spaces — this is exactly what the server

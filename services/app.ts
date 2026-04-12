@@ -8,6 +8,7 @@ import { invoiceRouter } from './routes/invoice/invoice.router';
 import { vanRouter }     from './routes/van/van.router';
 import { riskRouter }    from './routes/risk/risk.router';
 import { healthRouter }  from './routes/health/health.router';
+import { adminRouter }   from './routes/admin/admin.router';
 
 export function buildApp() {
   const app = express();
@@ -56,6 +57,7 @@ export function buildApp() {
   app.use('/invoices', invoiceRouter);
   app.use('/vans',     vanRouter);
   app.use('/risk',     riskRouter);
+  app.use('/admin', adminRouter);
 
   app.use(errorHandler);
   return app;

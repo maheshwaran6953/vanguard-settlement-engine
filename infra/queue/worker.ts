@@ -102,30 +102,49 @@ async (job: Job) => {
 // Worker lifecycle events
 // ----------------------------------------------------------------
 [notificationWorker, documentWorker].forEach((worker) => {
-worker.on('completed', (job) => {
+    worker.on('completed', (job) => {
     log.info(
-    { job_id: job.id, job_name: job.name },
-    'Job completed successfully'
+        { job_id: job.id, job_name: job.name },
+        'Job completed successfully'
     );
-});
+    });
 
-worker.on('failed', (job, err) => {
-    log.error(
-    {
-        job_id:    job?.id,
-        job_name:  job?.name,
-        attempts:  job?.attemptsMade,
-        err:       err.message,
-    },
-    'Job failed'
-    );
-});
+    worker.on('failed', (job, err) => {
+    const isFinalAttempt =
+        job !== undefined &&
+        job.attemptsMade >= (job.opts.attempts ?? 1);
 
-worker.on('error', (err) => {
+    if (isFinalAttempt) {
+        log.error(
+        {
+            job_id:       job?.id,
+            job_name:     job?.name,
+            attempts:     job?.attemptsMade,
+            err:          err.message,
+            payload:      job?.data,
+        },
+        'Job exhausted all retries — moved to failed state. ' +
+        'Use GET /admin/failed-jobs to inspect and retry.'
+        );
+    } else {
+        log.warn(
+        {
+            job_id:          job?.id,
+            job_name:        job?.name,
+            attempt:         job?.attemptsMade,
+            max_attempts:    job?.opts.attempts,
+            err:             err.message,
+            next_retry_in:   'exponential backoff',
+        },
+        'Job failed — will retry'
+        );
+    }
+    });
+
+    worker.on('error', (err) => {
     log.error({ err: err.message }, 'Worker error');
+    });
 });
-});
-
 log.info('Worker process started — listening for jobs');
 
 // ----------------------------------------------------------------

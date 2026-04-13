@@ -12,6 +12,8 @@
     "worker:dev": "nodemon --watch 'infra/queue/**/*.ts' --ext ts --exec ts-node infra/queue/worker.ts",
     "build": "tsc",
     "start": "node dist/services/server.js",
+    "test:unit":        "cross-env NODE_ENV=test jest --selectProjects unit --forceExit",
+    "test:integration": "cross-env NODE_ENV=test jest --selectProjects integration --forceExit",
     "test": "cross-env NODE_ENV=test jest --forceExit"
   },
   "repository": {

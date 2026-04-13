@@ -1,31 +1,32 @@
-/** @type {import('ts-jest').JestConfigWithTsJest} */
-module.exports = {
-  preset: 'ts-jest',
+import type { Config } from 'jest';
+
+const config: Config = {
+  preset:          'ts-jest',
   testEnvironment: 'node',
-  forceExit: true,
-  
-  // From your JS config: Essential for DB stability
-  maxWorkers: 1, 
-  testTimeout: 30000,
-  clearMocks: true,
-  rootDir: '.',
-  testMatch: ['<rootDir>/tests/**/*.test.ts'],
+  rootDir:         '.',
 
-  // From your TS config: Path mapping
-  moduleNameMapper: {
-    '^@core/(.*)$': '<rootDir>/core/$1',
-    '^@infra/(.*)$': '<rootDir>/infra/$1',
-    '^@services/(.*)$': '<rootDir>/services/$1',
-  },
+  // Two projects: unit tests (fast, no DB) and integration tests (real DB)
+  projects: [
+    {
+      displayName:  'unit',
+      preset:       'ts-jest',
+      testEnvironment: 'node',
+      testMatch:    ['**/tests/unit/**/*.test.ts'],
+      testTimeout:  5000,
+    },
+    {
+      displayName:  'integration',
+      preset:       'ts-jest',
+      testEnvironment: 'node',
+      testMatch:    ['**/tests/integration/**/*.test.ts'],
+      testTimeout:  30000,
+      maxWorkers:   1,
+    },
+  ],
 
-  transform: {
-    '^.+\\.tsx?$': [
-      'ts-jest',
-      {
-        tsconfig: {
-          strict: true,
-        },
-      },
-    ],
+  globals: {
+    'ts-jest': { tsconfig: { strict: true } },
   },
 };
+
+export default config;

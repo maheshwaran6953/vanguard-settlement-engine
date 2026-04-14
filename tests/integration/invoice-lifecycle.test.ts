@@ -98,6 +98,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
+  await new Promise<void>((resolve) => setTimeout(resolve, 500));
 });
 
 // ----------------------------------------------------------------

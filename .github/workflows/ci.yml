@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  ci:
+    name: Type check, lint, and test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER:     postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB:       vanguard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+
+      # Database
+      DB_HOST:     localhost
+      DB_PORT:     5432
+      DB_NAME:     vanguard_test
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_POOL_MIN: 1
+      DB_POOL_MAX: 3
+
+      # Redis
+      REDIS_URL:              redis://localhost:6379
+      REDIS_JOB_QUEUE_PREFIX: vanguard_test
+
+      # Auth
+      JWT_SECRET:      ${{ secrets.JWT_SECRET }}
+      JWT_EXPIRES_IN:  1h
+      BCRYPT_ROUNDS:   1
+
+      # Webhook
+      WEBHOOK_SECRET:  ${{ secrets.WEBHOOK_SECRET }}
+
+      # SMTP (not used in tests — required by Zod env validator)
+      SMTP_HOST: localhost
+      SMTP_PORT: 1025
+      SMTP_FROM: noreply@vanguard-test.local
+
+      # App
+      PORT: 3001
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Apply database migrations
+        run: |
+          for file in infra/db/migrations/V*.sql; do
+            echo "Applying $file..."
+            PGPASSWORD=postgres psql \
+              -h localhost \
+              -U postgres \
+              -d vanguard_test \
+              -f "$file"
+          done
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration

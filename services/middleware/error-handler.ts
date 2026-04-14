@@ -4,9 +4,9 @@ import { ZodError }                        from 'zod';
 // --- Invoice Service errors ---
 import {
   InvoiceNotFoundError,
-  UnauthorisedActorError,
-  InvalidTransitionError,
-} from '../../core/services/invoice.service';
+  UnauthorisedActorError} from '../../core/services/invoice.service';
+
+import { InvalidTransitionError } from '../../core/services/invoice/state-machine';
 
 // --- Risk Service errors ---
 import {
@@ -107,7 +107,8 @@ export function errorHandler(
   if (err instanceof InvalidTransitionError) {
     // 409 Conflict — the resource exists but cannot accept
     // this operation in its current state.
-    send(res, 409, 'INVALID_TRANSITION', err.message);
+    const message = err instanceof Error ? err.message : 'Invalid state transition';
+    send(res, 409, 'INVALID_TRANSITION', message);
     return;
   }
 

@@ -265,3 +265,5 @@ The HTTP layer is a pure translation layer.
 **GitFlow** — all work developed on feature branches, merged via pull
 requests into `develop`, promoted to `main` for releases. Conventional
 commits (`feat:`, `fix:`, `chore:`) throughout.
+
+[![CI](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml)

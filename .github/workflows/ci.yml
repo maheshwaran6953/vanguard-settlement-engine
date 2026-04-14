@@ -95,8 +95,19 @@ jobs:
               -f "$file"
           done
 
-      - name: Run unit tests
-        run: npm run test:unit
-
+          - name: Run unit tests
+          run: npm run test:unit
+  
       - name: Run integration tests
         run: npm run test:integration
+
+      - name: Run full test suite with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7

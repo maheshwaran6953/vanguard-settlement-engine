@@ -95,8 +95,8 @@ jobs:
               -f "$file"
           done
 
-          - name: Run unit tests
-          run: npm run test:unit
+      - name: Run unit tests
+        run: npm run test:unit
   
       - name: Run integration tests
         run: npm run test:integration

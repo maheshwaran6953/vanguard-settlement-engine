@@ -1,0 +1,13 @@
+{
+    "name": "Vanguard Local Development",
+    "values": [
+        { "key": "baseUrl",       "value": "http://localhost:3000", "enabled": true },
+        { "key": "supplierToken", "value": "",                      "enabled": true },
+        { "key": "buyerToken",    "value": "",                      "enabled": true },
+        { "key": "supplierId",    "value": "",                      "enabled": true },
+        { "key": "buyerId",       "value": "",                      "enabled": true },
+        { "key": "invoiceId",     "value": "",                      "enabled": true },
+        { "key": "accountNumber", "value": "",                      "enabled": true },
+        { "key": "vanId",         "value": "",                      "enabled": true }
+    ]
+}

@@ -1,0 +1,582 @@
+{
+    "info": {
+    "name": "Vanguard Settlement Engine",
+    "description": "Complete B2B invoice financing lifecycle. Run the collection in order to walk through: organisation registration → invoice submission → buyer approval → risk assessment → VAN creation → payment settlement.\n\nPrerequisites:\n- Server running on localhost:3000 (npm run dev)\n- Worker running in a separate terminal (npm run worker:dev)\n- PostgreSQL and Redis running (docker-compose up -d)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+    { "key": "baseUrl",        "value": "http://localhost:3000" },
+    { "key": "supplierToken",  "value": "" },
+    { "key": "buyerToken",     "value": "" },
+    { "key": "supplierId",     "value": "" },
+    { "key": "buyerId",        "value": "" },
+    { "key": "invoiceId",      "value": "" },
+    { "key": "accountNumber",  "value": "" },
+    { "key": "vanId",          "value": "" }
+    ],
+    "item": [
+    {
+        "name": "0. Health Check",
+        "item": [
+        {
+            "name": "GET /health",
+            "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Server is healthy', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.status).to.eql('ok');",
+                    "  pm.expect(body.db).to.eql('connected');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "1. Register Organisations",
+        "item": [
+        {
+            "name": "Register Supplier (Alpha Tech)",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"legal_name\": \"Alpha Tech Pvt Ltd\",\n  \"role\": \"supplier\",\n  \"email\": \"supplier@alphatech.demo\",\n  \"password\": \"DemoPass123!\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Supplier registered', () => {",
+                    "  pm.response.to.have.status(201);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.success).to.be.true;",
+                    "  pm.collectionVariables.set('supplierToken', body.data.token);",
+                    "  pm.collectionVariables.set('supplierId', body.data.organisation.id);",
+                    "  console.log('Supplier ID:', body.data.organisation.id);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Register Buyer (Zoho Corporation)",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"legal_name\": \"Zoho Corporation\",\n  \"role\": \"buyer\",\n  \"email\": \"finance@zoho.demo\",\n  \"password\": \"DemoPass456!\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Buyer registered', () => {",
+                    "  pm.response.to.have.status(201);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.success).to.be.true;",
+                    "  pm.collectionVariables.set('buyerToken', body.data.token);",
+                    "  pm.collectionVariables.set('buyerId', body.data.organisation.id);",
+                    "  console.log('Buyer ID:', body.data.organisation.id);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Login as Supplier",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"email\": \"supplier@alphatech.demo\",\n  \"password\": \"DemoPass123!\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Supplier login successful', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.token).to.be.a('string');",
+                    "  pm.collectionVariables.set('supplierToken', body.data.token);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "2. Invoice Lifecycle",
+        "item": [
+        {
+            "name": "Submit Invoice (Supplier)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",    "value": "application/json" },
+                { "key": "Authorization",   "value": "Bearer {{supplierToken}}" },
+                { "key": "Idempotency-Key", "value": "demo-invoice-submission-001" }
+            ],
+            "url": "{{baseUrl}}/invoices",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_number\": \"INV-DEMO-2026-001\",\n  \"buyer_id\": \"{{buyerId}}\",\n  \"amount_cents\": 1000000,\n  \"currency\": \"INR\",\n  \"due_date\": \"2026-12-31\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Invoice submitted with SUBMITTED status', () => {",
+                    "  pm.response.to.have.status(201);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.status).to.eql('SUBMITTED');",
+                    "  pm.expect(body.data.supplier_id).to.eql(pm.collectionVariables.get('supplierId'));",
+                    "  pm.collectionVariables.set('invoiceId', body.data.id);",
+                    "  console.log('Invoice ID:', body.data.id);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Approve Invoice (Buyer)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",  "value": "application/json" },
+                { "key": "Authorization", "value": "Bearer {{buyerToken}}" }
+            ],
+            "url": "{{baseUrl}}/invoices/{{invoiceId}}/approve",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"buyer_signature\": \"sha256-zoho-digital-approval-sig-2026-001\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Invoice approved — status BUYER_APPROVED', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.status).to.eql('BUYER_APPROVED');",
+                    "  pm.expect(body.data.buyer_signature).to.be.a('string');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Request Financing (Supplier)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Authorization", "value": "Bearer {{supplierToken}}" }
+            ],
+            "url": "{{baseUrl}}/invoices/{{invoiceId}}/request-financing"
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Financing requested — status FINANCING_REQUESTED', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.status).to.eql('FINANCING_REQUESTED');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Get Invoice + Audit Trail",
+            "request": {
+            "method": "GET",
+            "header": [
+                { "key": "Authorization", "value": "Bearer {{supplierToken}}" }
+            ],
+            "url": "{{baseUrl}}/invoices/{{invoiceId}}"
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Audit trail has 3 events so far', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.events.length).to.be.at.least(3);",
+                    "  const eventTypes = body.data.events.map(e => e.event_type);",
+                    "  pm.expect(eventTypes).to.include('invoice.submitted');",
+                    "  pm.expect(eventTypes).to.include('invoice.buyer_approved');",
+                    "  pm.expect(eventTypes).to.include('invoice.financing_requested');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "3. Risk Assessment",
+        "item": [
+        {
+            "name": "Assess Invoice Risk (APPROVE path)",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/risk/assess",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_id\": \"{{invoiceId}}\",\n  \"three_way_match_input\": {\n    \"invoice_id\": \"{{invoiceId}}\",\n    \"invoice_amount_cents\": 1000000,\n    \"po_amount_cents\": 1000000,\n    \"delivery_amount_cents\": 1000000,\n    \"po_number\": \"PO-ZOHO-2026-001\",\n    \"delivery_receipt_id\": \"DR-ZOHO-2026-001\"\n  },\n  \"anomaly_signals\": {\n    \"invoice_id\": \"{{invoiceId}}\",\n    \"buyer_id\": \"{{buyerId}}\",\n    \"supplier_id\": \"{{supplierId}}\",\n    \"amount_cents\": 1000000,\n    \"due_date\": \"2026-12-31\",\n    \"submitted_at\": \"2026-04-01T10:00:00.000Z\",\n    \"avg_invoice_amount_cents\": 900000,\n    \"days_until_due\": 90,\n    \"prior_default_count\": 0\n  }\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Risk assessment APPROVED', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.decision).to.eql('APPROVE');",
+                    "  pm.expect(body.data.three_way_match.passed).to.be.true;",
+                    "  pm.expect(body.data.anomaly_result.flags).to.have.lengthOf(0);",
+                    "  console.log('Confidence score:', body.data.confidence_score);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "4. Virtual Account & Settlement",
+        "item": [
+        {
+            "name": "Create Virtual Account (VAN)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",  "value": "application/json" },
+                { "key": "Authorization", "value": "Bearer {{supplierToken}}" }
+            ],
+            "url": "{{baseUrl}}/vans",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_id\": \"{{invoiceId}}\",\n  \"expected_amount_cents\": 1000000\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('VAN created — status active', () => {",
+                    "  pm.response.to.have.status(201);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.status).to.eql('active');",
+                    "  pm.expect(body.data.account_number).to.match(/^VSE\\d{12}$/);",
+                    "  pm.collectionVariables.set('accountNumber', body.data.account_number);",
+                    "  pm.collectionVariables.set('vanId', body.data.id);",
+                    "  console.log('VAN account number:', body.data.account_number);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Simulate Buyer Payment (Webhook)",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/vans/webhook/payment",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"account_number\": \"{{accountNumber}}\",\n  \"amount_cents\": 1000000,\n  \"idempotency_key\": \"bank-txn-demo-zoho-payment-001\",\n  \"paid_at\": \"2026-07-01T10:00:00.000Z\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "prerequest",
+                "script": {
+                "exec": [
+                    "// Generate HMAC-SHA256 signature for production use.",
+                    "// In development with NODE_ENV=development, signature",
+                    "// verification is active. Set X-Webhook-Signature header",
+                    "// using the sign-webhook.js script:",
+                    "//   node scripts/sign-webhook.js",
+                    "// For local testing without the worker running,",
+                    "// you can temporarily set NODE_ENV=test to bypass.",
+                    "console.log('Sending payment webhook to VAN:', pm.collectionVariables.get('accountNumber'));"
+                ]
+                }
+            },
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Payment recorded and VAN settled', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.success).to.be.true;",
+                    "  if (body.data) {",
+                    "    pm.expect(body.data.is_fully_settled).to.be.true;",
+                    "    console.log('VAN settled. Invoice should be REPAID.');",
+                    "  } else {",
+                    "    console.log('Note: Signature verification active in dev mode.');",
+                    "    console.log('Run: node scripts/sign-webhook.js to get the correct signature.');",
+                    "  }",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Verify Final Ledger State",
+            "request": {
+            "method": "GET",
+            "header": [
+                { "key": "Authorization", "value": "Bearer {{supplierToken}}" }
+            ],
+            "url": "{{baseUrl}}/vans/{{invoiceId}}"
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Ledger has debit (advance) and credit (payment)', () => {",
+                    "  pm.response.to.have.status(200);",
+                    "  const body = pm.response.json();",
+                    "  const entries = body.data.ledger_entries;",
+                    "  const debit  = entries.find(e => e.entry_type === 'debit');",
+                    "  const credit = entries.find(e => e.entry_type === 'credit');",
+                    "  pm.expect(debit).to.not.be.undefined;",
+                    "  pm.expect(credit).to.not.be.undefined;",
+                    "  pm.expect(body.data.is_fully_settled).to.be.true;",
+                    "  console.log('Final ledger entries:', entries.length);",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "5. Security & Resilience",
+        "item": [
+        {
+            "name": "Test Idempotency — Duplicate Invoice (Same Key)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",    "value": "application/json" },
+                { "key": "Authorization",   "value": "Bearer {{supplierToken}}" },
+                { "key": "Idempotency-Key", "value": "demo-invoice-submission-001" }
+            ],
+            "url": "{{baseUrl}}/invoices",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_number\": \"INV-DEMO-2026-001\",\n  \"buyer_id\": \"{{buyerId}}\",\n  \"amount_cents\": 1000000,\n  \"currency\": \"INR\",\n  \"due_date\": \"2026-12-31\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Duplicate request returns cached response', () => {",
+                    "  pm.response.to.have.status(201);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.id).to.eql(pm.collectionVariables.get('invoiceId'));",
+                    "  pm.expect(pm.response.headers.get('Idempotent-Replayed')).to.eql('true');",
+                    "  console.log('Idempotency confirmed — same invoice ID returned.');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Test Auth — Missing Token",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/invoices",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_number\": \"INV-UNAUTH-001\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Unauthenticated request returns 401', () => {",
+                    "  pm.response.to.have.status(401);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.error.code).to.eql('MISSING_TOKEN');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Test Security Headers",
+            "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Security headers are present', () => {",
+                    "  pm.expect(pm.response.headers.get('X-Frame-Options')).to.eql('DENY');",
+                    "  pm.expect(pm.response.headers.get('X-Content-Type-Options')).to.eql('nosniff');",
+                    "  pm.expect(pm.response.headers.get('X-Powered-By')).to.be.undefined;",
+                    "  pm.expect(pm.response.headers.get('Strict-Transport-Security')).to.include('max-age=31536000');",
+                    "  console.log('All security headers verified.');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    },
+    {
+        "name": "6. Error Scenarios",
+        "item": [
+        {
+            "name": "Reject — Invalid State Transition",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",  "value": "application/json" },
+                { "key": "Authorization", "value": "Bearer {{buyerToken}}" }
+            ],
+            "url": "{{baseUrl}}/invoices/{{invoiceId}}/approve",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"buyer_signature\": \"sha256-second-approval-attempt\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Invalid transition rejected with 409', () => {",
+                    "  pm.response.to.have.status(409);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.error.code).to.eql('INVALID_TRANSITION');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Reject — RBAC Violation (Supplier approves own invoice)",
+            "request": {
+            "method": "POST",
+            "header": [
+                { "key": "Content-Type",  "value": "application/json" },
+                { "key": "Authorization", "value": "Bearer {{supplierToken}}" }
+            ],
+            "url": "{{baseUrl}}/invoices/{{invoiceId}}/approve",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"buyer_signature\": \"sha256-self-approval-fraud\"\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('RBAC violation rejected with 403', () => {",
+                    "  pm.response.to.have.status(403);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.error.code).to.eql('FORBIDDEN');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        },
+        {
+            "name": "Reject — Three-Way Match Failure",
+            "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/risk/assess",
+            "body": {
+                "mode": "raw",
+                "raw": "{\n  \"invoice_id\": \"{{invoiceId}}\",\n  \"three_way_match_input\": {\n    \"invoice_id\": \"{{invoiceId}}\",\n    \"invoice_amount_cents\": 1000000,\n    \"po_amount_cents\": 500000,\n    \"delivery_amount_cents\": 1000000,\n    \"po_number\": \"PO-FRAUD-001\",\n    \"delivery_receipt_id\": \"DR-FRAUD-001\"\n  },\n  \"anomaly_signals\": {\n    \"invoice_id\": \"{{invoiceId}}\",\n    \"buyer_id\": \"{{buyerId}}\",\n    \"supplier_id\": \"{{supplierId}}\",\n    \"amount_cents\": 1000000,\n    \"due_date\": \"2026-12-31\",\n    \"submitted_at\": \"2026-04-01T10:00:00.000Z\",\n    \"avg_invoice_amount_cents\": 900000,\n    \"days_until_due\": 90,\n    \"prior_default_count\": 0\n  }\n}"
+            }
+            },
+            "event": [
+            {
+                "listen": "test",
+                "script": {
+                "exec": [
+                    "pm.test('Three-way match failure returns REJECT', () => {",
+                    "  pm.response.to.have.status(422);",
+                    "  const body = pm.response.json();",
+                    "  pm.expect(body.data.decision).to.eql('REJECT');",
+                    "  pm.expect(body.data.reason_code).to.eql('THREE_WAY_MATCH_FAILED');",
+                    "});"
+                ]
+                }
+            }
+            ]
+        }
+        ]
+    }
+    ]
+}

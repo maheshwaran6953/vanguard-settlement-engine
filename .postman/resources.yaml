@@ -1,0 +1,9 @@
+# Use this workspace to collaborate
+workspace:
+  id: 6f56415b-404c-4e62-809c-52c21a9d7458
+
+localResources:
+  collections:
+    - ..\docs\vanguard-collection.json
+  environments:
+    - ..\docs\vanguard-environment.json

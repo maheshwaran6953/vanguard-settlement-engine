@@ -7,12 +7,16 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev": "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
-    "worker": "ts-node infra/queue/worker.ts",
-    "worker:dev": "nodemon --watch 'infra/queue/**/*.ts' --ext ts --exec ts-node infra/queue/worker.ts",
-    "build": "tsc",
-    "start": "node dist/services/server.js",
-    "test": "cross-env NODE_ENV=test jest --forceExit"
+    "dev":              "nodemon --watch 'services/**/*.ts' --watch 'core/**/*.ts' --watch 'infra/**/*.ts' --ext ts --exec ts-node services/server.ts",
+    "worker":           "ts-node infra/queue/worker.ts",
+    "worker:dev":       "nodemon --watch 'infra/queue/**/*.ts' --ext ts --exec ts-node infra/queue/worker.ts",
+    "build":            "tsc",
+    "start":            "node dist/services/server.js",
+    "test": "cross-env NODE_ENV=test jest --runInBand --forceExit",
+    "test:unit":        "cross-env NODE_ENV=test jest --selectProjects unit --forceExit",
+    "test:integration": "cross-env NODE_ENV=test jest --selectProjects integration --runInBand --forceExit",
+    "test:coverage":    "cross-env NODE_ENV=test jest --coverage --forceExit",
+    "test:coverage:unit": "cross-env NODE_ENV=test jest --selectProjects unit --coverage --forceExit"
   },
   "repository": {
     "type": "git",

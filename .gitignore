@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 storage/receipts/*.pdf
 scripts/force-pdf.ts
+
+# Test coverage
+coverage/

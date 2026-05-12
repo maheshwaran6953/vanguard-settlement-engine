@@ -13,6 +13,11 @@ import { Invoice }           from '../domain/entities';
 import { createLogger } from '../utils/logger';
 import { JOB_TYPES }              from '../../infra/queue/registry';
 import { InvoiceApprovedPayload } from '../../infra/queue/job-payloads';
+import {
+  VALID_TRANSITIONS,
+  InvalidTransitionError,
+  assertValidTransition,
+} from './invoice/state-machine';
 
 const log = createLogger('InvoiceService');
 
@@ -34,38 +39,11 @@ export class UnauthorisedActorError extends Error {
   }
 }
 
-export class InvalidTransitionError extends Error {
-  constructor(from: string, to: string) {
-    super(`Invalid status transition: ${from} → ${to}`);
-    this.name = 'InvalidTransitionError';
-  }
-}
-
 // ------------------------------------------------------------------
 // Valid state machine transitions.
 // This is the enforcement layer for your invoice_status enum.
 // If a transition isn't listed here, the service rejects it.
 // ------------------------------------------------------------------
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  DRAFT:                ['SUBMITTED', 'CANCELLED'],
-  SUBMITTED:            ['BUYER_APPROVED', 'CANCELLED'],
-  BUYER_APPROVED:       ['FINANCING_REQUESTED', 'CANCELLED'],
-  FINANCING_REQUESTED:  ['FUNDED', 'CANCELLED'],
-  FUNDED:               ['REPAID', 'DEFAULTED'],
-  REPAID:               [],   // terminal state
-  DEFAULTED:            [],   // terminal state
-  CANCELLED:            [],   // terminal state
-};
-
-function assertValidTransition(
-  current: string,
-  next: string
-): void {
-  const allowed = VALID_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(next)) {
-    throw new InvalidTransitionError(current, next);
-  }
-}
 
 // ------------------------------------------------------------------
 // InvoiceService

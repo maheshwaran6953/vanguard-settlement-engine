@@ -13,12 +13,15 @@ const config = {
       testTimeout:     5000,
     },
     {
-      displayName:     'integration',
-      preset:          'ts-jest',
-      testEnvironment: 'node',
-      testMatch:       ['**/tests/integration/**/*.test.ts'],
-      testTimeout:     30000,
-      maxWorkers:      1,
+      displayName:      'integration',
+      preset:           'ts-jest',
+      testEnvironment:  'node',
+      testMatch:        ['**/tests/integration/**/*.test.ts'],
+      testTimeout:      30000,
+      maxWorkers:       1,
+      // runInBand forces all test files in this project to run
+      // sequentially in the same process — no parallel DB access
+      runner:           'jest-runner',
     },
   ],
 
@@ -41,9 +44,9 @@ const config = {
 
   coverageThreshold: {
     global: {
-      lines: 30,
-      functions: 20, 
-      branches: 15,  
+      lines:      30,
+      functions:  20,
+      branches:   15,
       statements: 30,
     },
   },

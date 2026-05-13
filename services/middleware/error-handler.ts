@@ -96,6 +96,9 @@ export function errorHandler(
 
   // --- Zod validation failure (malformed request body) ---
   if (err instanceof ZodError) {
+    // Add this log to see the EXACT field that is failing during the test run
+    console.log('DEBUG: Zod Validation Failed:', JSON.stringify(err.flatten().fieldErrors, null, 2));
+    
     send(res, 400, 'VALIDATION_ERROR',
       'Request body failed validation',
       err.flatten().fieldErrors

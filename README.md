@@ -1,80 +1,145 @@
-# 🛡️ Vanguard Settlement Engine
+# Vanguard Settlement Engine
 
-> An enterprise-grade B2B invoice financing platform that eliminates the working capital gap for SMEs by providing instant, risk-assessed advances against buyer-approved invoices.
+> An enterprise-grade B2B invoice financing platform that eliminates the
+> working capital gap for SMEs by providing instant, risk-assessed advances
+> against buyer-approved invoices.
 
+[![CI](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-86%20passing-brightgreen)](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions)
+[![Coverage](https://img.shields.io/badge/coverage-67%25-yellow)](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-Containerised-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Instrumented-000000?logo=opentelemetry)](https://opentelemetry.io/)
 
 ---
 
-## 📋 The Problem
-Indian SMEs face a structural cash flow crisis: a supplier issues a ₹10,00,000 invoice and often waits **90 days** to be paid. During this window, they cannot meet payroll or take new orders. **Vanguard bridges this gap** by advancing funds against verified invoices within hours.
+## The Problem
+
+Indian SMEs face a structural cash flow crisis: a supplier like **Alpha Tech**
+delivers goods to a large buyer like **Zoho**, issues a ₹10,00,000 invoice,
+and then waits **90 days** to be paid. During that 90-day window, Alpha Tech
+cannot pay its own suppliers, meet payroll, or take on new orders.
+
+Traditional bank financing is slow (7–14 days), paper-heavy, and unavailable
+to businesses without three years of ITR filings.
+
+**Vanguard bridges this gap** by advancing funds against verified,
+buyer-approved invoices within hours — not weeks.
 
 ---
 
-## 🏗️ Architecture Overview
-```text
+## Quick Start
+
+### Prerequisites
+
+- Node.js 20+
+- Docker Desktop
+
+### Setup
+
+```bash
+# 1. Clone and install
+git clone https://github.com/maheshwaran6953/vanguard-settlement-engine.git
+cd vanguard-settlement-engine
+npm install
+
+# 2. Start all services (PostgreSQL, Redis, Jaeger, Mailpit)
+docker-compose up -d
+
+# 3. Configure environment
+cp infra/config/.env.development infra/config/.env.local
+# Edit .env.local with your secrets
+
+# 4. Start the HTTP server
+npm run dev
+
+# 5. Start the background worker (separate terminal)
+npm run worker:dev
+```
+
+### Explore the API
+
+Open **http://localhost:3000/docs** — Swagger UI with all endpoints documented
+and executable from the browser.
+
+Import `docs/vanguard-collection.json` into Postman to run the complete
+19-request lifecycle end-to-end.
+
+---
+
+## Architecture Overview
+
+```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        API Gateway (Express)                     │
-│              JWT Auth  ·  Zod Validation  ·  RBAC               │
+│                     API Gateway (Express)                       │
+│   helmet · JWT Auth · Zod Validation · RBAC · Rate Limiting     │
+│   Idempotency Keys · Webhook HMAC Verification                  │
 └──────────┬──────────────────┬──────────────────┬────────────────┘
            │                  │                  │
     ┌──────▼──────┐   ┌───────▼──────┐   ┌──────▼──────┐
     │   Invoice   │   │     VAN      │   │    Risk     │
-    │   Service   │   │   Service    │   │    Engine    │
+    │   Service   │   │   Service    │   │   Engine    │
     │             │   │              │   │             │
     │ State       │   │ Idempotent   │   │ Three-Way   │
-    │ Machine     │   │ Ledger       │   │ Match       │
+    │ Machine     │   │ Ledger       │   │ Match +     │
+    │ + Event     │   │ + Auto       │   │ Anomaly     │
+    │ Sourcing    │   │ Settlement   │   │ Detection   │
     └──────┬──────┘   └───────┬──────┘   └──────┬──────┘
-           │                  │                  │
-    ┌──────▼──────────────────▼──────────────────▼──────┐
-    │                  PostgreSQL 16                      │
-    │   invoices  ·  virtual_accounts  ·  ledger_entries │
+           │                  │                 │
+    ┌──────▼──────────────────▼─────────────────▼───────┐
+    │                  PostgreSQL 16                    │
+    │  invoices · virtual_accounts · ledger_entries     │
+    │  invoice_events (append-only, REVOKE UPDATE)      │
+    │  idempotency_keys · organisation_credentials      │
     └───────────────────────────────────────────────────┘
            │
-    ┌──────▼─────────────────────────────────────────────┐
-    │           Observability Layer                       │
-    │   pino (logging)  ·  OpenTelemetry (tracing)       │
-    └────────────────────────────────────────────────────┘
-    ```
+    ┌──────▼──────────────────────────────────────────────┐
+    │           Async Infrastructure                      │
+    │   BullMQ + Redis — notification & document queues   │
+    │   Nodemailer → Mailpit (dev) / SMTP (prod)          │
+    │   PDFKit → settlement receipt generation            │
+    └─────────────────────────────────────────────────────┘
+           │
+    ┌──────▼──────────────────────────────────────────────┐
+    │           Observability                             │
+    │   pino structured JSON logging                      │
+    │   OpenTelemetry auto-instrumented traces            │
+    │   Trace-log correlation (trace_id on every line)    │
+    │   Jaeger UI → http://localhost:16686                │
+    └─────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Engineering Highlights
 
-These are the decisions that make this a financial-grade system rather
-than a CRUD application.
+### 1. Idempotent Ledger — Defence-in-Depth
 
-### 1. Idempotent Ledger with Defence-in-Depth
+Bank webhooks fire twice, arrive out of order, and retry on timeout.
+A naive implementation double-credits the supplier.
 
-Bank webhooks are unreliable. The same payment notification can arrive
-twice, arrive out of order, or arrive after the account has already settled.
-A naive implementation credits the supplier twice.
+This platform implements **two independent guards**:
 
-This system implements **two independent idempotency guards**:
+**Layer 1 — Application check:** Before opening a transaction, the service
+queries existing ledger entries and compares idempotency keys. Cheap,
+lock-free, handles the common case.
 
-- **Layer 1 — Application check**: Before opening a database transaction,
-  the service queries existing ledger entries and compares idempotency keys.
-  This handles the common case cheaply, without acquiring locks.
+**Layer 2 — Database constraint:** `UNIQUE` on `ledger_entries.idempotency_key`
+is the physical last line of defence. Two concurrent webhooks → one INSERT
+succeeds, one gets `PG 23505`, caught and returned as 200 to the bank.
 
-- **Layer 2 — Database constraint**: The `UNIQUE` constraint on
-  `ledger_entries.idempotency_key` is the final physical guard. Even if two
-  concurrent webhook requests pass Layer 1 simultaneously, only one `INSERT`
-  succeeds. The other receives `PG error 23505` and is caught and returned
-  as a success response to the bank — preventing infinite retries.
-```typescript
-// The bank always receives 200. It never retries. No double-credits.
-if (err instanceof DuplicatePaymentError) {
-  res.status(200).json({ success: true, message: 'Payment already recorded' });
-}
-```
+**HTTP-level idempotency:** `POST /invoices` supports the `Idempotency-Key`
+header. Retrying a timed-out request returns the cached response without
+creating a duplicate invoice. Keys stored in PostgreSQL for durability.
 
-### 2. Three-Way Match Risk Engine
+### 2. Three-Layer Risk Engine
 
-Before the platform commits capital, every invoice passes a
-**three-layer verification**:
+Before the platform commits capital, every invoice passes three independent
+verification layers — implemented as **pure functions** (no database calls,
+no side effects, independently unit-testable):
 
 | Layer | Check | Hard Gate? |
 |-------|-------|-----------|
@@ -82,52 +147,40 @@ Before the platform commits capital, every invoice passes a
 | Anomaly Detection | Amount spikes, short payment terms, fraud signals | Configurable threshold |
 | Buyer Risk Score | Default history, credit utilisation, payment recency | Auto-reject above 75/100 |
 
-The engine is a **pure function** — no database calls, no side effects.
-This makes it independently unit-testable and means the scoring logic
-can be swapped (e.g. replaced with an ML model) without touching the
-service layer.
-```typescript
-// Pure — same input always produces same output. No mocks needed in tests.
-const result = assessInvoiceRisk(cmd);
-```
-
 ### 3. Event Sourcing for Compliance
 
-Every state change on every invoice writes an immutable event to
-`invoice_events` before the status column is updated. Both writes
-happen in a single `BEGIN / COMMIT` transaction.
+Every state change writes an immutable event to `invoice_events` before
+the status column is updated — both in a single `BEGIN/COMMIT` transaction.
+
 ```sql
--- The DB physically enforces immutability.
--- Even a developer with direct DB access cannot alter history.
+-- The DB physically enforces immutability
 REVOKE UPDATE, DELETE ON invoice_events FROM PUBLIC;
 ```
 
-This means: if a regulator asks "why was invoice INV-2026-001 funded?",
-the complete decision trail — three-way match result, anomaly score,
-buyer risk score, actor ID, timestamp — is recoverable from the event log.
+If a regulator asks why invoice INV-2026-001 was funded, the complete
+decision trail — three-way match result, anomaly score, buyer risk score,
+actor identity, timestamp — is recoverable from the event log.
 
 ### 4. State Machine Enforcement
 
-Invoices follow a strict lifecycle. An invoice cannot jump from `DRAFT`
-to `FUNDED`. The transitions are validated in code before any database
-write:
 ```
 DRAFT → SUBMITTED → BUYER_APPROVED → FINANCING_REQUESTED → FUNDED → REPAID
                                                           ↘ DEFAULTED
-                         (any state) → CANCELLED
+                         (any pre-funded state) → CANCELLED
 ```
 
-An attempt to approve an already-approved invoice returns
-`409 INVALID_TRANSITION` — the database is never touched.
+Invalid transitions return `409 INVALID_TRANSITION` before the database
+is touched. Exhaustively tested with 34 unit tests covering every valid
+path, every skip-ahead attempt, every backward transition, and every
+self-transition on all 8 states.
 
 ### 5. Trace-Log Correlation
 
-Every log line produced by this system carries the OpenTelemetry
-`trace_id` of the active request. In an incident, a single UUID connects:
+Every log line carries the OpenTelemetry `trace_id` of the active request.
+In an incident: paste the `trace_id` into Jaeger for the full distributed
+trace with timing, paste it into your log aggregator for the human-readable
+narrative.
 
-- Every log line emitted during that request (pino)
-- The full distributed trace with timing (Jaeger / any OTLP collector)
-- The exact PostgreSQL queries executed (auto-instrumented by OTel)
 ```json
 {
   "level": "info",
@@ -139,99 +192,125 @@ Every log line produced by this system carries the OpenTelemetry
 }
 ```
 
+### 6. Webhook HMAC-SHA256 Verification
+
+`POST /vans/webhook/payment` requires an `X-Webhook-Signature` header
+containing `HMAC-SHA256(secret, raw_body)`. The raw body is captured
+before `express.json()` parses it. Signature comparison uses
+`crypto.timingSafeEqual` to prevent timing attacks.
+
 ---
 
 ## Technology Stack
 
 | Layer | Technology | Reason |
-|-------|-----------|--------|
+|-------|------------|--------|
 | Runtime | Node.js 20 + TypeScript 5 (strict) | Type safety on financial data |
-| Framework | Express 4 | Minimal, explicit, production-proven |
+| Framework | Express 5 | Minimal, explicit, production-proven |
 | Database | PostgreSQL 16 (Docker) | ACID compliance, JSONB event store |
-| Validation | Zod | Runtime schema enforcement on all inputs |
-| Auth | JWT (jsonwebtoken) + bcrypt | Stateless, role-bearing tokens |
+| Cache / Queue | Redis 7 + BullMQ | Async job processing, idempotency |
+| Validation | Zod | Runtime schema enforcement |
+| Auth | JWT + bcrypt | Stateless, role-bearing tokens |
 | Logging | pino + pino-http | Structured JSON, lowest overhead |
-| Tracing | OpenTelemetry SDK (auto-instrumented) | Vendor-neutral distributed tracing |
-| Architecture | Clean Architecture (Core / Services / Infra) | Testable, dependency-inverted |
-| Patterns | Repository, CQRS-lite, Event Sourcing, Saga | Production financial system standards |
+| Tracing | OpenTelemetry SDK | Vendor-neutral distributed tracing |
+| Email (dev) | Nodemailer → Mailpit | Local SMTP capture at localhost:8025 |
+| PDF | PDFKit | Settlement receipt generation |
+| API Docs | Swagger UI (OpenAPI 3.0) | Interactive at /docs |
+| Security | helmet, express-rate-limit | OWASP headers, brute-force protection |
+| Testing | Jest + supertest | 86 tests (60 unit + 26 integration) |
+| CI/CD | GitHub Actions | Automated on every PR and push |
+| Architecture | Clean Architecture (Core/Services/Infra) | Testable, dependency-inverted |
 
 ---
 
 ## Project Structure
+
 ```
 vanguard-settlement-engine/
 ├── core/
-│   ├── config/          # Environment validation (Zod)
-│   ├── database/        # Pool, container (DI root)
+│   ├── config/          # Environment validation (Zod, fast-fail on boot)
+│   ├── database/        # Pool, DI container
 │   ├── domain/          # Entity types, auth types
-│   ├── repositories/    # Data access layer (interfaces + implementations)
-│   ├── services/        # Business logic
+│   ├── repositories/    # Data access (interfaces + SQL implementations)
+│   ├── services/
+│   │   ├── invoice/     # State machine (extracted, independently testable)
+│   │   ├── risk/        # Three-layer risk engine (pure functions)
 │   │   ├── invoice.service.ts
 │   │   ├── van.service.ts
-│   │   └── risk/        # Three-layer risk engine
+│   │   ├── auth.service.ts
+│   │   └── risk/
 │   └── utils/           # Logger (pino + OTel mixin)
 ├── services/
-│   ├── middleware/      # Auth, RBAC, error handler, request logger
-│   ├── routes/          # HTTP layer (invoice, van, risk, auth, health)
-│   ├── app.ts           # Express factory (buildApp)
-│   └── server.ts        # Entry point — owns initialisation order
+│   ├── middleware/      # Auth, RBAC, idempotency, rate limiting,
+│   │                    # webhook auth, error handler, request logger
+│   ├── routes/          # HTTP layer (invoice, van, risk, auth, admin, health)
+│   ├── app.ts           # Express factory (buildApp) + Swagger UI
+│   └── server.ts        # Entry point — owns OTel initialisation order
 ├── infra/
-│   ├── config/          # Environment files
-│   ├── db/migrations/   # V001 domain schema, V002 auth schema
+│   ├── config/          # Environment files (.env.development, .env.test)
+│   ├── db/migrations/   # V001–V004 versioned SQL migrations
+│   ├── email/           # Nodemailer + HTML templates
+│   ├── pdf/             # PDFKit receipt generator
+│   ├── queue/           # BullMQ queues, worker, job handlers
 │   └── telemetry/       # OpenTelemetry SDK initialisation
-└── docs/
-    └── adr/             # Architecture Decision Records
+├── tests/
+│   ├── unit/            # 60 pure function tests (risk engine + state machine)
+│   └── integration/     # 26 real-database tests (lifecycle + resilience)
+├── docs/
+│   ├── adr/             # ADR-0001 through ADR-0007
+│   ├── openapi.yaml     # OpenAPI 3.0 spec
+│   ├── vanguard-collection.json    # Postman collection (19 chained requests)
+│   └── vanguard-environment.json  # Postman environment
+├── scripts/
+│   └── sign-webhook.js  # HMAC signing utility for manual webhook testing
+├── docker-compose.yml   # PostgreSQL, Redis, Jaeger, Mailpit
+└── .github/workflows/
+    └── ci.yml           # CI pipeline with service containers
 ```
 
 ---
 
-## Getting Started
+## API Reference
 
-### Prerequisites
+Full documentation at **http://localhost:3000/docs** (Swagger UI).
 
-- Node.js 20+
-- Docker Desktop
+### Invoice Lifecycle
 
-### Setup
-```bash
-# 1. Clone and install
-git clone https://github.com/your-username/vanguard-settlement-engine.git
-cd vanguard-settlement-engine
-npm install
+```
+POST   /auth/register                   Register supplier or buyer organisation
+POST   /auth/login                      Authenticate, receive JWT
 
-# 2. Start PostgreSQL
-docker-compose up -d
+POST   /invoices                        Submit invoice (supplier, Idempotency-Key supported)
+GET    /invoices/:id                    Get invoice with full audit trail
+POST   /invoices/:id/approve            Buyer digitally approves invoice
+POST   /invoices/:id/request-financing  Supplier requests advance
 
-# 3. Apply database migrations
-psql -U postgres -d vanguard_db -f infra/db/migrations/V001__initial_schema.sql
-psql -U postgres -d vanguard_db -f infra/db/migrations/V002__auth_schema.sql
+POST   /risk/assess                     Run three-layer risk assessment
 
-# 4. Configure environment
-cp infra/config/.env.development infra/config/.env.local
-# Edit .env.local with your DB credentials
+POST   /vans                            Create Virtual Account Number
+POST   /vans/webhook/payment            Bank payment notification (HMAC-secured)
+GET    /vans/:invoiceId                 Reconciliation view with ledger entries
 
-# 5. Start the server
-npm run dev
+GET    /admin/failed-jobs               List failed background jobs (platform_admin)
+POST   /admin/failed-jobs/:q/:id/retry  Retry a specific failed job
+DELETE /admin/failed-jobs/:q/:id        Discard a failed job
+
+GET    /health                          Service health check
+GET    /docs                            Swagger UI
 ```
 
-### API Flow (Full Lifecycle)
-```bash
-# Register organisations
-POST /auth/register   { legal_name, role: "supplier", email, password }
-POST /auth/register   { legal_name, role: "buyer",    email, password }
+### Error Response Shape
 
-# Invoice lifecycle (use Bearer tokens from register responses)
-POST /invoices                          # supplier submits invoice
-POST /invoices/:id/approve              # buyer digitally approves
-POST /invoices/:id/request-financing    # supplier requests advance
+Every error returned by this API has an identical structure:
 
-# Risk assessment
-POST /risk/assess                       # platform evaluates invoice
-
-# Settlement
-POST /vans                              # create virtual account
-POST /vans/webhook/payment              # bank webhook — payment received
-GET  /vans/:invoiceId                   # reconciliation view
+```json
+{
+  "success": false,
+  "error": {
+    "code":    "INVALID_TRANSITION",
+    "message": "Invalid status transition: BUYER_APPROVED → SUBMITTED"
+  }
+}
 ```
 
 ---
@@ -242,28 +321,56 @@ GET  /vans/:invoiceId                   # reconciliation view
 |-----|---------|--------|
 | [ADR-0001](docs/adr/ADR-0001-tech-stack.md) | TypeScript + Node.js + PostgreSQL | Accepted |
 | [ADR-0002](docs/adr/ADR-0002-event-sourcing.md) | Event sourcing for invoice audit trail | Accepted |
-| [ADR-0003](docs/adr/ADR-0003-idempotent-ledger.md) | Defence-in-depth idempotency for payments | Accepted |
+| [ADR-0003](docs/adr/ADR-0003-idempotent-ledger.md) | Defence-in-depth idempotency | Accepted |
 | [ADR-0004](docs/adr/ADR-0004-three-way-match.md) | Three-layer risk engine architecture | Accepted |
 | [ADR-0005](docs/adr/ADR-0005-opentelemetry.md) | OpenTelemetry for observability | Accepted |
+| [ADR-0006](docs/adr/ADR-0006-resilience.md) | Rate limiting, webhook auth, idempotency keys | Accepted |
+| [ADR-0007](docs/adr/ADR-0007-async-jobs.md) | BullMQ async job architecture | Accepted |
 
 ---
 
-## Architectural Patterns in Use
+## Testing
 
-**Repository Pattern** — every database interaction is behind an interface.
-Business logic never writes SQL directly. This makes services testable
-without a real database.
+```bash
+npm run test:unit         # 60 unit tests — pure functions, sub-second
+npm run test:integration  # 26 integration tests — real PostgreSQL
+npm test                  # All 86 tests
+npm run test:coverage     # Full suite with coverage report
+```
 
-**Dependency Injection** — `core/database/container.ts` is the single
-composition root. Every service receives its dependencies through the
-constructor. Nothing uses global state.
+**Unit tests** cover the risk engine (26 tests across all three layers and
+boundary conditions) and the invoice state machine (34 tests covering every
+valid transition, every invalid skip-ahead, every terminal state, and every
+backward transition).
 
-**Clean Architecture** — dependencies flow inward only. The `core` layer
-has zero knowledge of Express, HTTP status codes, or request bodies.
-The HTTP layer is a pure translation layer.
+**Integration tests** run against a real PostgreSQL database (no mocks for
+the data layer). They cover the complete financial lifecycle, RBAC enforcement,
+state machine validation, idempotency middleware, webhook authentication bypass
+in test mode, and all six security headers set by helmet.
 
-**GitFlow** — all work developed on feature branches, merged via pull
-requests into `develop`, promoted to `main` for releases. Conventional
-commits (`feat:`, `fix:`, `chore:`) throughout.
+---
 
-[![CI](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/maheshwaran6953/vanguard-settlement-engine/actions/workflows/ci.yml)
+## Development Services
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| API | http://localhost:3000 | HTTP server |
+| Swagger UI | http://localhost:3000/docs | Interactive API docs |
+| Mailpit | http://localhost:8025 | Capture outgoing emails |
+| Jaeger | http://localhost:16686 | Distributed trace visualisation |
+| PostgreSQL | localhost:5432 | Primary database |
+| Redis | localhost:6379 | Job queue and idempotency store |
+
+---
+
+## GitFlow & Standards
+
+All work developed on feature branches, merged via pull requests into
+`develop`, promoted to `main` for releases. Branch protection requires
+CI to pass before any merge.
+
+Conventional commits throughout: `feat:`, `fix:`, `docs:`, `test:`,
+`chore:`.
+
+ADRs document every significant architectural decision, including the
+rationale and alternatives considered.

@@ -9,20 +9,40 @@ import { vanRouter }     from './routes/van/van.router';
 import { riskRouter }    from './routes/risk/risk.router';
 import { healthRouter }  from './routes/health/health.router';
 import { adminRouter }   from './routes/admin/admin.router';
+import swaggerUi  from 'swagger-ui-express';
+import jsYaml     from 'js-yaml';
+import fs         from 'fs';
+import path       from 'path';
 
 export function buildApp() {
   const app = express();
+  const isDev = process.env['NODE_ENV'] !== 'production';
+  
+  if (process.env['NODE_ENV'] !== 'production') {
+    try {
+      const specPath = path.resolve(__dirname, '../docs/openapi.yaml');
+      const specFile = fs.readFileSync(specPath, 'utf8');
+      const swaggerSpec = jsYaml.load(specFile) as object;
+  
+      app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+        customSiteTitle: 'Vanguard Settlement Engine API',
+        customCss: '.swagger-ui .topbar { display: none }',
+      }));
+  
+      console.log('📖 Swagger UI available at http://localhost:3000/docs');
+    } catch (err) {
+      console.warn('Could not load OpenAPI spec:', err);
+    }
+  }
 
   app.use(helmet({
-    contentSecurityPolicy: {
+    contentSecurityPolicy: isDev ? false : { // Disable CSP in dev or add Swagger exceptions
       directives: {
         defaultSrc:     ["'none'"],
-        scriptSrc:      ["'none'"],
-        styleSrc:       ["'none'"],
-        imgSrc:         ["'none'"],
+        scriptSrc:      ["'self'"], 
+        styleSrc:       ["'self'", "'unsafe-inline'"],
+        imgSrc:         ["'self'", "data:"],
         connectSrc:     ["'self'"],
-        frameAncestors: ["'none'"],
-        formAction:     ["'none'"],
       },
     },
     strictTransportSecurity: {
@@ -47,6 +67,7 @@ export function buildApp() {
     }
     express.json()(req, res, next);
   });
+
 
   app.use(apiLimiter);
   app.use(requestLogger);

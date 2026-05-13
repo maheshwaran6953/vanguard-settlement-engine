@@ -32,7 +32,7 @@ services:
     # appendonly yes enables the AOF (Append Only File) persistence mode.
     # This is the correct mode for a job queue — RDB snapshots can lose
     # the last few seconds of enqueued jobs on crash.
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
     volumes:
       - vanguard_redis_data:/data
     healthcheck:

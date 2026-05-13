@@ -33,6 +33,7 @@ async function cleanDatabase(): Promise<void> {
       ledger_entries,
       virtual_accounts,
       invoices,
+      idempotency_keys,
       organisation_credentials,
       organisations
     RESTART IDENTITY CASCADE;

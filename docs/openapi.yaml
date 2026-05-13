@@ -1,0 +1,747 @@
+openapi: 3.0.3
+
+info:
+  title: Vanguard Settlement Engine
+  description: |
+    An enterprise-grade B2B invoice financing platform that eliminates the
+    working capital gap for SMEs by providing instant, risk-assessed advances
+    against buyer-approved invoices.
+
+    ## Authentication
+    All protected endpoints require a Bearer JWT token obtained from
+    `POST /auth/login` or `POST /auth/register`.
+
+    ## Idempotency
+    `POST /invoices` supports the `Idempotency-Key` request header.
+    Sending the same key twice returns the cached response without
+    creating a duplicate invoice.
+
+    ## Webhook Security
+    `POST /vans/webhook/payment` requires an `X-Webhook-Signature`
+    header containing an HMAC-SHA256 signature of the request body
+    using the shared banking partner secret.
+  version: 1.0.0
+  contact:
+    name: Vanguard Settlement Engine
+    url: https://github.com/maheshwaran6953/vanguard-settlement-engine
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service liveness and database connectivity
+  - name: Auth
+    description: Organisation registration and authentication
+  - name: Invoices
+    description: Invoice lifecycle management
+  - name: Risk
+    description: AI-powered three-layer risk assessment
+  - name: VANs
+    description: Virtual Account Numbers and payment settlement
+  - name: Admin
+    description: Platform administration (platform_admin role required)
+
+paths:
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      description: Returns server status and database connectivity. Used by load balancers and Docker healthchecks.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:    { type: string, example: ok }
+                  service:   { type: string, example: vanguard-settlement-engine }
+                  db:        { type: string, example: connected }
+                  timestamp: { type: string, format: date-time }
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register an organisation
+      description: Creates a new organisation (supplier or buyer) and returns a JWT token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+            example:
+              legal_name: Alpha Tech Pvt Ltd
+              role: supplier
+              email: supplier@alphatech.in
+              password: SecurePass123!
+      responses:
+        '201':
+          description: Organisation registered successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuthResult' }
+        '400':
+          description: Validation error or email already registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login to an organisation account
+      description: Authenticates with email and password. Returns a fresh JWT token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuthResult' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429':
+          description: Too many login attempts (5 per 15 minutes per IP)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateLimitError' }
+
+  /invoices:
+    post:
+      tags: [Invoices]
+      summary: Submit a new invoice
+      description: |
+        Creates a new invoice in SUBMITTED status. The supplier identity
+        is extracted from the JWT — the request body must not include supplier_id.
+
+        Supports idempotency via the `Idempotency-Key` header. Retrying
+        with the same key returns the original response without creating
+        a duplicate.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string }
+          description: Optional unique key for safe retries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitInvoiceRequest' }
+      responses:
+        '201':
+          description: Invoice submitted
+          headers:
+            Idempotent-Replayed:
+              schema: { type: string, enum: ['true'] }
+              description: Present when the response was served from the idempotency cache
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Invoice' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Role not permitted (buyers cannot submit invoices)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /invoices/{id}:
+    get:
+      tags: [Invoices]
+      summary: Get invoice with full audit trail
+      security:
+        - bearerAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+      responses:
+        '200':
+          description: Invoice and event history
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          invoice: { $ref: '#/components/schemas/Invoice' }
+                          events:
+                            type: array
+                            items: { $ref: '#/components/schemas/InvoiceEvent' }
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /invoices/{id}/approve:
+    post:
+      tags: [Invoices]
+      summary: Buyer approves an invoice
+      description: |
+        The buyer provides a digital signature as cryptographic proof of approval.
+        Only the buyer organisation designated on the invoice can approve it.
+        Transitions the invoice from SUBMITTED to BUYER_APPROVED.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buyer_signature]
+              properties:
+                buyer_signature:
+                  type: string
+                  minLength: 10
+                  description: SHA-256 hash of the approval payload
+                  example: sha256-zoho-approval-sig-2026-001
+      responses:
+        '200':
+          description: Invoice approved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Invoice' }
+        '403':
+          description: Actor is not the designated buyer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Invalid state transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /invoices/{id}/request-financing:
+    post:
+      tags: [Invoices]
+      summary: Supplier requests financing advance
+      description: |
+        The supplier requests an advance against a BUYER_APPROVED invoice.
+        Transitions to FINANCING_REQUESTED. The risk engine must then
+        evaluate the invoice before funds are disbursed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - { $ref: '#/components/parameters/InvoiceId' }
+      responses:
+        '200':
+          description: Financing requested
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Invoice' }
+        '409':
+          description: Invalid state transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /risk/assess:
+    post:
+      tags: [Risk]
+      summary: Run three-layer risk assessment
+      description: |
+        Evaluates an invoice through three independent risk layers:
+        1. **Three-Way Match** — Invoice vs PO vs Delivery Receipt (hard gate, ±2% variance)
+        2. **Anomaly Detection** — Amount spikes, short payment terms, default history
+        3. **Buyer Risk Score** — Default history, credit utilisation, payment recency
+
+        Returns APPROVE (200), MANUAL_REVIEW (202), or REJECT (422).
+        A REJECT transitions the invoice to CANCELLED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RiskAssessRequest' }
+      responses:
+        '200':
+          description: Invoice approved for financing
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RiskResult' }
+        '202':
+          description: Invoice flagged for manual review
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RiskResult' }
+        '422':
+          description: Invoice rejected by risk engine
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RiskResult' }
+
+  /vans:
+    post:
+      tags: [VANs]
+      summary: Create a Virtual Account Number
+      description: |
+        Issues a unique virtual bank account number for a FINANCING_REQUESTED
+        invoice. The buyer is instructed to pay to this account. When payment
+        arrives, the platform intercepts it for automatic reconciliation.
+        One VAN per invoice — enforced by database constraint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoice_id, expected_amount_cents]
+              properties:
+                invoice_id:
+                  type: string
+                  format: uuid
+                expected_amount_cents:
+                  type: integer
+                  minimum: 1
+                  example: 1000000
+      responses:
+        '201':
+          description: VAN created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/VirtualAccount' }
+        '409':
+          description: VAN already exists for this invoice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /vans/webhook/payment:
+    post:
+      tags: [VANs]
+      summary: Record a payment (bank webhook)
+      description: |
+        Called by the banking partner when a buyer's payment arrives into
+        a Virtual Account. This endpoint is authenticated via HMAC-SHA256
+        signature, not JWT.
+
+        The `X-Webhook-Signature` header must contain the HMAC-SHA256
+        of the raw request body using the shared webhook secret.
+
+        This endpoint is idempotent — duplicate webhooks with the same
+        `idempotency_key` return 200 without double-crediting.
+      parameters:
+        - in: header
+          name: X-Webhook-Signature
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256 hex signature of the raw request body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookPaymentRequest' }
+      responses:
+        '200':
+          description: Payment recorded or duplicate acknowledged
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/VanWithLedger' }
+        '401':
+          description: Missing or invalid webhook signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /vans/{invoiceId}:
+    get:
+      tags: [VANs]
+      summary: Get VAN state and ledger
+      description: Returns the virtual account with all ledger entries for reconciliation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: invoiceId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: VAN and ledger entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/VanWithLedger' }
+
+  /admin/failed-jobs:
+    get:
+      tags: [Admin]
+      summary: List all failed background jobs
+      description: Returns failed jobs from all queues. Requires platform_admin role.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Failed job list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          count: { type: integer }
+                          jobs:
+                            type: array
+                            items: { $ref: '#/components/schemas/FailedJob' }
+
+  /admin/failed-jobs/{queue}/{jobId}/retry:
+    post:
+      tags: [Admin]
+      summary: Retry a failed job
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: queue
+          required: true
+          schema: { type: string, enum: [notification, document] }
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job queued for retry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /admin/failed-jobs/{queue}/{jobId}:
+    delete:
+      tags: [Admin]
+      summary: Discard a failed job permanently
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: queue
+          required: true
+          schema: { type: string, enum: [notification, document] }
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job discarded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT obtained from POST /auth/login or POST /auth/register
+
+  parameters:
+    InvoiceId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+      description: Invoice UUID
+
+  schemas:
+
+    SuccessResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code:    { type: string, example: VALIDATION_ERROR }
+            message: { type: string, example: Request body failed validation }
+            details: { type: object }
+
+    RateLimitError:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code:                { type: string, example: TOO_MANY_LOGIN_ATTEMPTS }
+            message:             { type: string }
+            retry_after_seconds: { type: integer, example: 900 }
+
+    RegisterRequest:
+      type: object
+      required: [legal_name, role, email, password]
+      properties:
+        legal_name: { type: string, example: Alpha Tech Pvt Ltd }
+        gstin:      { type: string, example: 29ABCDE1234F1Z5 }
+        role:       { type: string, enum: [supplier, buyer] }
+        email:      { type: string, format: email }
+        password:   { type: string, minLength: 8 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+
+    AuthResult:
+      type: object
+      properties:
+        token:      { type: string, description: JWT Bearer token }
+        expires_in: { type: string, example: 8h }
+        organisation:
+          type: object
+          properties:
+            id:         { type: string, format: uuid }
+            legal_name: { type: string }
+            role:       { type: string, enum: [supplier, buyer, platform_admin] }
+
+    SubmitInvoiceRequest:
+      type: object
+      required: [invoice_number, buyer_id, amount_cents, due_date]
+      properties:
+        invoice_number: { type: string, maxLength: 50, example: INV-2026-001 }
+        buyer_id:       { type: string, format: uuid }
+        amount_cents:   { type: integer, minimum: 1, example: 1000000, description: Amount in paise (smallest currency unit) }
+        currency:       { type: string, length: 3, default: INR }
+        due_date:       { type: string, format: date, example: '2026-12-31' }
+
+    Invoice:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        invoice_number:  { type: string }
+        supplier_id:     { type: string, format: uuid }
+        buyer_id:        { type: string, format: uuid }
+        amount_cents:    { type: integer }
+        currency:        { type: string }
+        due_date:        { type: string, format: date }
+        status:
+          type: string
+          enum: [DRAFT, SUBMITTED, BUYER_APPROVED, FINANCING_REQUESTED, FUNDED, REPAID, DEFAULTED, CANCELLED]
+        buyer_signature: { type: string, nullable: true }
+        pdf_receipt_path: { type: string, nullable: true }
+        created_at:      { type: string, format: date-time }
+        updated_at:      { type: string, format: date-time }
+
+    InvoiceEvent:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        invoice_id:  { type: string, format: uuid }
+        event_type:  { type: string, example: invoice.buyer_approved }
+        payload:     { type: object }
+        actor_id:    { type: string, format: uuid, nullable: true }
+        occurred_at: { type: string, format: date-time }
+
+    RiskAssessRequest:
+      type: object
+      required: [invoice_id, three_way_match_input, anomaly_signals]
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+        three_way_match_input:
+          type: object
+          required: [invoice_id, invoice_amount_cents, po_amount_cents, delivery_amount_cents, po_number, delivery_receipt_id]
+          properties:
+            invoice_id:            { type: string, format: uuid }
+            invoice_amount_cents:  { type: integer }
+            po_amount_cents:       { type: integer }
+            delivery_amount_cents: { type: integer }
+            po_number:             { type: string }
+            delivery_receipt_id:   { type: string }
+        anomaly_signals:
+          type: object
+          properties:
+            invoice_id:               { type: string, format: uuid }
+            buyer_id:                 { type: string, format: uuid }
+            supplier_id:              { type: string, format: uuid }
+            amount_cents:             { type: integer }
+            due_date:                 { type: string, format: date }
+            submitted_at:             { type: string, format: date-time }
+            avg_invoice_amount_cents: { type: integer }
+            days_until_due:           { type: integer }
+            prior_default_count:      { type: integer }
+
+    RiskResult:
+      type: object
+      properties:
+        invoice_id:       { type: string, format: uuid }
+        decision:         { type: string, enum: [APPROVE, MANUAL_REVIEW, REJECT] }
+        confidence_score: { type: integer, minimum: 0, maximum: 100 }
+        reason_code:      { type: string, example: ALL_CHECKS_PASSED }
+        reason_message:   { type: string }
+        buyer_risk_score: { type: integer }
+        three_way_match:
+          type: object
+          properties:
+            passed:       { type: boolean }
+            variance_pct: { type: number }
+            reason:       { type: string }
+        anomaly_result:
+          type: object
+          properties:
+            passed: { type: boolean }
+            score:  { type: integer }
+            flags:
+              type: array
+              items:
+                type: object
+                properties:
+                  code:     { type: string }
+                  message:  { type: string }
+                  severity: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        assessed_at: { type: string, format: date-time }
+
+    VirtualAccount:
+      type: object
+      properties:
+        id:                    { type: string, format: uuid }
+        invoice_id:            { type: string, format: uuid }
+        account_number:        { type: string, example: VSE123456789012 }
+        ifsc_code:             { type: string, example: YESB0CMSNOC }
+        expected_amount_cents: { type: integer }
+        received_amount_cents: { type: integer }
+        status:                { type: string, enum: [active, settled, expired] }
+        expires_at:            { type: string, format: date-time }
+        created_at:            { type: string, format: date-time }
+
+    LedgerEntry:
+      type: object
+      properties:
+        id:                 { type: string, format: uuid }
+        virtual_account_id: { type: string, format: uuid }
+        entry_type:         { type: string, enum: [debit, credit] }
+        amount_cents:       { type: integer }
+        description:        { type: string }
+        idempotency_key:    { type: string }
+        created_at:         { type: string, format: date-time }
+
+    VanWithLedger:
+      type: object
+      properties:
+        virtual_account:  { $ref: '#/components/schemas/VirtualAccount' }
+        ledger_entries:
+          type: array
+          items: { $ref: '#/components/schemas/LedgerEntry' }
+        is_fully_settled: { type: boolean }
+
+    WebhookPaymentRequest:
+      type: object
+      required: [account_number, amount_cents, idempotency_key, paid_at]
+      properties:
+        account_number:  { type: string, example: VSE123456789012 }
+        amount_cents:    { type: integer, minimum: 1 }
+        idempotency_key: { type: string, description: Bank transaction reference — must be unique per payment }
+        paid_at:         { type: string, format: date-time }
+
+    FailedJob:
+      type: object
+      properties:
+        id:            { type: string }
+        queue:         { type: string, enum: [notification, document] }
+        job_name:      { type: string }
+        failed_reason: { type: string }
+        attempts_made: { type: integer }
+        failed_at:     { type: integer, description: Unix timestamp }
+        payload:       { type: object }

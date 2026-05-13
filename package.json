@@ -15,7 +15,8 @@
     "test": "cross-env NODE_ENV=test jest --runInBand --forceExit",
     "test:unit": "cross-env NODE_ENV=test jest --selectProjects unit --forceExit",
     "test:integration": "cross-env NODE_ENV=test jest --selectProjects integration --runInBand --forceExit",
-    "test:coverage": "cross-env NODE_ENV=test jest --coverage --runInBand --forceExit --logHeapUsage",    "test:coverage:unit": "cross-env NODE_ENV=test jest --selectProjects unit --coverage --forceExit"
+    "test:coverage": "cross-env NODE_ENV=test jest --coverage --runInBand --detectOpenHandles --forceExit",
+    "test:coverage:unit": "cross-env NODE_ENV=test jest --selectProjects unit --coverage --forceExit"
   },
   "repository": {
     "type": "git",

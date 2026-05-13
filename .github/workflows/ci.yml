@@ -102,7 +102,8 @@ jobs:
         run: npm run test:integration
 
       - name: Run full test suite with coverage
-        run: npm run test:coverage
+        run: cross-env 
+          NODE_ENV=test jest --coverage --runInBand --forceExit
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

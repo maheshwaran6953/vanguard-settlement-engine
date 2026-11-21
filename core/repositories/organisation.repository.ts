@@ -7,8 +7,14 @@ gstin:      string | null;
 org_type:   'buyer' | 'supplier' | 'platform';
 }
 
+export interface OrganisationSummary {
+  id: string;
+  legal_name: string;
+}
+
 export interface IOrganisationRepository {
 findById(id: string):        Promise<Organisation | null>;
+findByRole(role: 'buyer' | 'supplier' | 'platform'): Promise<OrganisationSummary[]>;
 create(input: CreateOrgInput): Promise<Organisation>;
 }
 
@@ -21,6 +27,14 @@ async findById(id: string): Promise<Organisation | null> {
     [id]
     );
     return result.rows[0] ?? null;
+}
+
+async findByRole(role: 'buyer' | 'supplier' | 'platform'): Promise<OrganisationSummary[]> {
+    const result = await this.pool.query<OrganisationSummary>(
+    `SELECT id, legal_name FROM organisations WHERE org_type = $1 ORDER BY legal_name ASC`,
+    [role]
+    );
+    return result.rows;
 }
 
 async create(input: CreateOrgInput): Promise<Organisation> {

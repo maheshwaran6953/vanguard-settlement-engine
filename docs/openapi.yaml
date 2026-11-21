@@ -490,6 +490,36 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/VanWithLedger' }
+              examples:
+                payment_recorded:
+                  summary: Payment successfully recorded
+                  value:
+                    success: true
+                    data:
+                      virtual_account:
+                        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                        invoice_id: "7b4c81d2-0e5a-4931-98a7-7bcf9286d8cf"
+                        account_number: "VSE123456789012"
+                        ifsc_code: "YESB0CMSNOC"
+                        expected_amount_cents: "1000000"
+                        received_amount_cents: "600000"
+                        status: "partially_settled"
+                        expires_at: "2026-08-01T00:00:00.000Z"
+                        created_at: "2026-07-01T10:00:00.000Z"
+                      ledger_entries:
+                        - id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+                          virtual_account_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                          entry_type: "credit"
+                          amount_cents: "600000"
+                          description: "Bank payment via webhook"
+                          idempotency_key: "bank_tx_12345"
+                          created_at: "2026-07-01T10:00:00.000Z"
+                      is_fully_settled: false
+                duplicate_payment:
+                  summary: Duplicate payment delivery (idempotency key already recorded)
+                  value:
+                    success: true
+                    message: "Payment already recorded"
         '401':
           description: Missing or invalid webhook signature
           content:
@@ -519,6 +549,35 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/VanWithLedger' }
+              example:
+                success: true
+                data:
+                  virtual_account:
+                    id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                    invoice_id: "7b4c81d2-0e5a-4931-98a7-7bcf9286d8cf"
+                    account_number: "VSE123456789012"
+                    ifsc_code: "YESB0CMSNOC"
+                    expected_amount_cents: "1000000"
+                    received_amount_cents: "1000000"
+                    status: "settled"
+                    expires_at: "2026-08-01T00:00:00.000Z"
+                    created_at: "2026-07-01T10:00:00.000Z"
+                  ledger_entries:
+                    - id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+                      virtual_account_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                      entry_type: "credit"
+                      amount_cents: "600000"
+                      description: "Partial bank payment via webhook"
+                      idempotency_key: "bank_tx_12345"
+                      created_at: "2026-07-01T10:00:00.000Z"
+                    - id: "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
+                      virtual_account_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                      entry_type: "credit"
+                      amount_cents: "400000"
+                      description: "Settlement completion payment via webhook"
+                      idempotency_key: "bank_tx_12346"
+                      created_at: "2026-07-02T11:00:00.000Z"
+                  is_fully_settled: true
 
   /admin/failed-jobs:
     get:
@@ -804,30 +863,48 @@ components:
 
     VirtualAccount:
       type: object
+      description: |
+        Represents a Virtual Account (VAN) linked to an invoice.
+        Note: expected_amount_cents and received_amount_cents are serialised as strings in JSON because they are PostgreSQL BIGINT values. Clients must parse them and must not use them in floating-point arithmetic.
       properties:
         id:                    { type: string, format: uuid }
         invoice_id:            { type: string, format: uuid }
         account_number:        { type: string, example: VSE123456789012 }
         ifsc_code:             { type: string, example: YESB0CMSNOC }
-        expected_amount_cents: { type: integer }
-        received_amount_cents: { type: integer }
+        expected_amount_cents:
+          type: string
+          example: "1000000"
+          description: Expected amount in paise (serialised as string because it is a PostgreSQL BIGINT value. Clients must parse it and must not use floating-point arithmetic).
+        received_amount_cents:
+          type: string
+          example: "600000"
+          description: Received amount in paise (serialised as string because it is a PostgreSQL BIGINT value. Clients must parse it and must not use floating-point arithmetic).
         status:                { type: string, enum: [active, settled, expired, partially_settled, over_paid] }
         expires_at:            { type: string, format: date-time }
         created_at:            { type: string, format: date-time }
 
     LedgerEntry:
       type: object
+      description: |
+        Represents a financial ledger entry against a Virtual Account.
+        Note: amount_cents is serialised as a string in JSON because it is a PostgreSQL BIGINT value. Clients must parse it and must not use it in floating-point arithmetic.
       properties:
         id:                 { type: string, format: uuid }
         virtual_account_id: { type: string, format: uuid }
         entry_type:         { type: string, enum: [debit, credit] }
-        amount_cents:       { type: integer }
+        amount_cents:
+          type: string
+          example: "600000"
+          description: Amount in paise (serialised as string because it is a PostgreSQL BIGINT value. Clients must parse it and must not use floating-point arithmetic).
         description:        { type: string }
         idempotency_key:    { type: string }
         created_at:         { type: string, format: date-time }
 
     VanWithLedger:
       type: object
+      description: |
+        Reconciliation view containing the virtual account, ledger entries, and full settlement status.
+        Note: expected_amount_cents, received_amount_cents and every ledger amount_cents are serialised as strings in JSON because they are PostgreSQL BIGINT values. Clients must parse them and must not use them in floating-point arithmetic.
       properties:
         virtual_account:  { $ref: '#/components/schemas/VirtualAccount' }
         ledger_entries:

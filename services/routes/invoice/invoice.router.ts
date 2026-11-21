@@ -3,6 +3,7 @@ import { invoiceService } from '../../../core/database/container';
 import {
   SubmitInvoiceSchema,
   ApproveInvoiceSchema,
+  ListInvoicesQuerySchema,
 } from './invoice.schemas';
 import { authenticate, requireRole } from '../../middleware/authenticate';
 import { idempotencyGuard } from '../../middleware/idempotency';
@@ -16,6 +17,17 @@ function asyncHandler(
     fn(req, res, next).catch(next);
   };
 }
+
+// GET /invoices — List invoices scoped to caller's role
+invoiceRouter.get(
+  '/',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const query = ListInvoicesQuerySchema.parse(req.query);
+    const invoices = await invoiceService.listInvoices(req.user!, query);
+    res.status(200).json({ success: true, data: invoices });
+  })
+);
 
 // POST /invoices — Only suppliers can submit
 invoiceRouter.post(

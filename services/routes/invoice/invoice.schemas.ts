@@ -21,6 +21,22 @@ export const ApproveInvoiceSchema = z.object({
 // This endpoint has no required body fields.
 export const RequestFinancingSchema = z.object({}).strict();
 
+export const ListInvoicesQuerySchema = z.object({
+  status: z.enum([
+    'DRAFT',
+    'SUBMITTED',
+    'BUYER_APPROVED',
+    'FINANCING_REQUESTED',
+    'FUNDED',
+    'REPAID',
+    'DEFAULTED',
+    'CANCELLED',
+  ]).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
 export type SubmitInvoiceDto    = z.infer<typeof SubmitInvoiceSchema>;
 export type ApproveInvoiceDto   = z.infer<typeof ApproveInvoiceSchema>;
 export type RequestFinancingDto = z.infer<typeof RequestFinancingSchema>;
+export type ListInvoicesQueryDto = z.infer<typeof ListInvoicesQuerySchema>;

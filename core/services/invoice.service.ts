@@ -1,6 +1,6 @@
 import { Queue }                  from 'bullmq';
 import { pool }              from '../database/pool';
-import { IInvoiceRepository} from '../repositories/invoice.repository';
+import { IInvoiceRepository, FindInvoicesFilter } from '../repositories/invoice.repository';
 import { IEventRepository }  from '../repositories/event.repository';
 import { IOrganisationRepository } from '../repositories/organisation.repository';
 import {
@@ -9,7 +9,8 @@ import {
   RequestFinancingCommand,
   InvoiceWithHistory,
 } from './invoice.service.types';
-import { Invoice }           from '../domain/entities';
+import { Invoice, InvoiceStatus }           from '../domain/entities';
+import { JwtPayload }        from '../domain/auth.types';
 import { createLogger } from '../utils/logger';
 import { JOB_TYPES }              from '../../infra/queue/registry';
 import { InvoiceApprovedPayload } from '../../infra/queue/job-payloads';
@@ -352,5 +353,33 @@ export class InvoiceService {
     }
 
     return { invoice, events };
+  }
+
+  // ----------------------------------------------------------------
+  // listInvoices
+  // Role-scoped listing:
+  //   - supplier: sees invoices where supplier_id = user.sub
+  //   - buyer: sees invoices where buyer_id = user.sub
+  //   - platform_admin: sees all invoices
+  // ----------------------------------------------------------------
+  async listInvoices(
+    user: JwtPayload,
+    query: { status?: InvoiceStatus; limit?: number; offset?: number }
+  ): Promise<Invoice[]> {
+    const filter: FindInvoicesFilter = {
+      status: query.status,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    };
+
+    if (user.role === 'supplier') {
+      filter.supplierId = user.sub;
+    } else if (user.role === 'buyer') {
+      filter.buyerId = user.sub;
+    } else if (user.role === 'platform_admin') {
+      // Admin sees all invoices
+    }
+
+    return this.invoiceRepo.findAll(filter);
   }
 }

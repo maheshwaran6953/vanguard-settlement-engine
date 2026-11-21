@@ -453,8 +453,21 @@ paths:
         The `X-Webhook-Signature` header must contain the HMAC-SHA256
         of the raw request body using the shared webhook secret.
 
-        This endpoint is idempotent — duplicate webhooks with the same
-        `idempotency_key` return 200 without double-crediting.
+        Settlement handling rules:
+        - Exact payment (received equals expected): VAN status transitions to `settled`,
+          invoice status updates to `REPAID`, `is_fully_settled` is `true`, and settlement
+          receipt PDF generation job is enqueued.
+        - Partial payment (received less than expected): VAN status transitions to `partially_settled`,
+          invoice status remains `FUNDED`, `is_fully_settled` is `false`, and event `van.partially_settled`
+          is emitted with remaining amount in paise.
+        - Completion of partial payment: When a subsequent payment brings received amount equal to expected,
+          VAN transitions to `settled`, invoice moves to `REPAID`, and PDF job is enqueued.
+        - Over-payment (received more than expected): VAN status transitions to `over_paid`,
+          invoice moves to `REPAID`, `is_fully_settled` is `false`, event `invoice.over_paid`
+          is emitted with excess amount and `requires_manual_review: true`, and PDF job is enqueued.
+        - Duplicate payment: Duplicate webhook deliveries matching an existing `idempotency_key`
+          return HTTP 200 with `{ "success": true, "message": "Payment already recorded" }` without
+          duplicate ledger credits.
       parameters:
         - in: header
           name: X-Webhook-Signature
@@ -798,7 +811,7 @@ components:
         ifsc_code:             { type: string, example: YESB0CMSNOC }
         expected_amount_cents: { type: integer }
         received_amount_cents: { type: integer }
-        status:                { type: string, enum: [active, settled, expired] }
+        status:                { type: string, enum: [active, settled, expired, partially_settled, over_paid] }
         expires_at:            { type: string, format: date-time }
         created_at:            { type: string, format: date-time }
 

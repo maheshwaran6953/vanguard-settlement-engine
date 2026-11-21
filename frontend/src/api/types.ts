@@ -46,6 +46,44 @@ export interface LoginInput {
   password: string;
 }
 
+export type InvoiceStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'BUYER_APPROVED'
+  | 'FINANCING_REQUESTED'
+  | 'FUNDED'
+  | 'REPAID'
+  | 'DEFAULTED'
+  | 'CANCELLED';
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  supplier_id: string;
+  buyer_id: string;
+  amount_cents: string | number;
+  currency: string;
+  due_date: string;
+  status: InvoiceStatus;
+  buyer_signature?: string | null;
+  pdf_receipt_path?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitInvoiceInput {
+  invoice_number: string;
+  buyer_id: string;
+  amount_cents: number;
+  currency: string;
+  due_date: string;
+}
+
+export interface BuyerOrgSummary {
+  id: string;
+  legal_name: string;
+}
+
 export interface AuthUser {
   token: string;
   role: OrgRole;

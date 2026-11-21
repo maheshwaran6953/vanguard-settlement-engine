@@ -7,6 +7,7 @@ import { AppShell } from './components/Layout/AppShell';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { SupplierDashboard } from './pages/dashboards/SupplierDashboard';
+import { SubmitInvoicePage } from './pages/supplier/SubmitInvoicePage';
 import { BuyerDashboard } from './pages/dashboards/BuyerDashboard';
 import { PlatformAdminDashboard } from './pages/dashboards/PlatformAdminDashboard';
 
@@ -56,6 +57,14 @@ export default function App(): React.ReactElement {
               element={
                 <ProtectedRoute allowedRoles={['supplier']}>
                   <SupplierDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="supplier/invoices/new"
+              element={
+                <ProtectedRoute allowedRoles={['supplier']}>
+                  <SubmitInvoicePage />
                 </ProtectedRoute>
               }
             />

@@ -209,116 +209,161 @@ async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
 
     // Only reject new money on a settled account.
     // (Duplicates are handled above regardless of settled status.)
-    if (van.status === 'settled') {
-    throw new Error(
+    if (van.status === 'settled' || van.status === 'over_paid') {
+      throw new Error(
         `Virtual account ${cmd.account_number} is already settled`
-    );
+      );
     }
 
     const client = await pool.connect();
 
     try {
-    await client.query('BEGIN');
+      await client.query('BEGIN');
 
-    await this.vanRepo.appendLedgerEntry(
+      await this.vanRepo.appendLedgerEntry(
         {
-        virtual_account_id: van.id,
-        entry_type:         'credit',
-        amount_cents:       cmd.amount_cents,
-        description:        `Buyer payment received on ${cmd.paid_at.toISOString()}`,
-        idempotency_key:    cmd.idempotency_key,
+          virtual_account_id: van.id,
+          entry_type:         'credit',
+          amount_cents:       cmd.amount_cents,
+          description:        `Buyer payment received on ${cmd.paid_at.toISOString()}`,
+          idempotency_key:    cmd.idempotency_key,
         },
         client
-    );
+      );
 
-    // Atomic SQL-level increment — safe against concurrent webhooks.
-    // A read-modify-write pattern would lose one update under
-    // concurrent load. The += in SQL is atomic at the engine level.
-    const updated = await this.vanRepo.updateReceivedAmount(
+      // Atomic SQL-level increment — safe against concurrent webhooks.
+      // A read-modify-write pattern would lose one update under
+      // concurrent load. The += in SQL is atomic at the engine level.
+      const updated = await this.vanRepo.updateReceivedAmount(
         van.id,
         cmd.amount_cents,
         client
-    );
+      );
 
-    // Auto-settle when full expected amount received
-    let finalVan = updated;
+      const received = Number(updated.received_amount_cents);
+      const expected = Number(updated.expected_amount_cents);
 
-    if (
-        Number(updated.received_amount_cents) >=
-        Number(updated.expected_amount_cents)
-    ) {
+      let finalVan = updated;
+      let shouldEnqueuePdf = false;
+
+      if (received < expected) {
+        // Partial payment — VAN partially_settled, invoice stays FUNDED
+        finalVan = await this.vanRepo.updateStatus(van.id, 'partially_settled', client);
+
+        await this.eventRepo.append(
+          {
+            invoice_id: van.invoice_id,
+            event_type: 'van.partially_settled',
+            payload: {
+              virtual_account_id:     van.id,
+              received_amount_cents:  received,
+              remaining_amount_cents: expected - received,
+              idempotency_key:        cmd.idempotency_key,
+            },
+          },
+          client
+        );
+      } else if (received === expected) {
+        // Exact payment — VAN settled, invoice REPAID
         finalVan = await this.vanRepo.settleAccount(van.id, client);
 
         await client.query(
-        `UPDATE invoices
-        SET status = 'REPAID', updated_at = now()
-        WHERE id = $1`,
-        [van.invoice_id]
+          `UPDATE invoices
+           SET status = 'REPAID', updated_at = now()
+           WHERE id = $1`,
+          [van.invoice_id]
         );
 
         await this.eventRepo.append(
-        {
+          {
             invoice_id: van.invoice_id,
             event_type: 'invoice.repaid',
             payload: {
-            virtual_account_id:    van.id,
-            received_amount_cents: updated.received_amount_cents,
-            idempotency_key:       cmd.idempotency_key,
-            settled_at:            new Date().toISOString(),
+              virtual_account_id:    van.id,
+              received_amount_cents: updated.received_amount_cents,
+              idempotency_key:       cmd.idempotency_key,
+              settled_at:            new Date().toISOString(),
             },
-        },
-        client
+          },
+          client
         );
 
-        await client.query('COMMIT');
+        shouldEnqueuePdf = true;
+      } else {
+        // Over-payment — VAN over_paid, invoice REPAID, requires manual review
+        finalVan = await this.vanRepo.updateStatus(van.id, 'over_paid', client);
 
-        // ── Enqueue PDF generation AFTER commit ───────────────────
+        await client.query(
+          `UPDATE invoices
+           SET status = 'REPAID', updated_at = now()
+           WHERE id = $1`,
+          [van.invoice_id]
+        );
+
+        await this.eventRepo.append(
+          {
+            invoice_id: van.invoice_id,
+            event_type: 'invoice.over_paid',
+            payload: {
+              virtual_account_id:     van.id,
+              expected_amount_cents:  expected,
+              received_amount_cents:  received,
+              excess_cents:           received - expected,
+              idempotency_key:        cmd.idempotency_key,
+              requires_manual_review: true,
+            },
+          },
+          client
+        );
+
+        shouldEnqueuePdf = true;
+      }
+
+      await client.query('COMMIT');
+
+      // ── Enqueue PDF generation AFTER commit ───────────────────
+      if (shouldEnqueuePdf) {
         const invoice = await this.invoiceRepo.findById(van.invoice_id);
         if (invoice) {
-            const payload: SettlementReceiptPdfPayload = {
-                invoice_id:     invoice.id,        // ← confirm this line exists exactly
-                invoice_number: invoice.invoice_number,
-                supplier_id:    invoice.supplier_id,
-                buyer_id:       invoice.buyer_id,
-                amount_cents:   invoice.amount_cents,
-                currency:       invoice.currency,
-                settled_at:     new Date().toISOString(),
-            };
+          const payload: SettlementReceiptPdfPayload = {
+            invoice_id:     invoice.id,        // ← confirm this line exists exactly
+            invoice_number: invoice.invoice_number,
+            supplier_id:    invoice.supplier_id,
+            buyer_id:       invoice.buyer_id,
+            amount_cents:   invoice.amount_cents,
+            currency:       invoice.currency,
+            settled_at:     new Date().toISOString(),
+          };
 
-        await this.documentQueue.add(
+          await this.documentQueue.add(
             JOB_TYPES.SETTLEMENT_RECEIPT_PDF,
             payload,
             { jobId: `receipt-${invoice.id}` }
-        );
+          );
 
-        log.info(
+          log.info(
             { invoice_id: invoice.id },
             'Settlement receipt PDF job enqueued'
-        );
+          );
         }
+      }
 
-    } else {
-        await client.query('COMMIT');
-    }
+      const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
 
-    await client.query('COMMIT');
-
-    const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
-
-    log.info(
+      log.info(
         {
-        van_id:          van.id,
-        amount_cents:    cmd.amount_cents,
-        is_fully_settled: finalVan.status === 'settled',
+          van_id:           van.id,
+          amount_cents:     cmd.amount_cents,
+          is_fully_settled: finalVan.status === 'settled',
         },
         'Payment recorded successfully'
-    );
+      );
 
-    return {
+      return {
         virtual_account:  finalVan,
         ledger_entries:   ledgerEntries,
         is_fully_settled: finalVan.status === 'settled',
-    };
+      };
 
     } catch (err: unknown) {
     await client.query('ROLLBACK');

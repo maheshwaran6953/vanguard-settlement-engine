@@ -87,6 +87,8 @@
 
 import express from 'express';
 import helmet  from 'helmet';
+import cors    from 'cors';
+import { env } from '../core/config/env';
 import { apiLimiter }    from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
 import { errorHandler }  from './middleware/error-handler';
@@ -96,6 +98,7 @@ import { vanRouter }     from './routes/van/van.router';
 import { riskRouter }    from './routes/risk/risk.router';
 import { healthRouter }  from './routes/health/health.router';
 import { adminRouter }   from './routes/admin/admin.router';
+import { organisationRouter } from './routes/organisation/organisation.router';
 import swaggerUi  from 'swagger-ui-express';
 import jsYaml     from 'js-yaml';
 import fs         from 'fs';
@@ -150,6 +153,11 @@ export function buildApp() {
     referrerPolicy: { policy: 'no-referrer' },
   }));
 
+  app.use(cors({
+    origin: env.CORS_ORIGIN,
+    credentials: true,
+  }));
+
   // Apply express.json() to every route EXCEPT the payment webhook endpoint.
   app.use((req, res, next) => {
     if (req.path === '/vans/webhook/payment') {
@@ -170,6 +178,7 @@ export function buildApp() {
   app.use('/vans',        vanRouter);
   app.use('/risk',        riskRouter);
   app.use('/admin',       adminRouter);
+  app.use('/organisations', organisationRouter);
 
   app.use(errorHandler);
   

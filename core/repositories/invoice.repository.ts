@@ -1,10 +1,19 @@
 import { Pool, PoolClient } from 'pg';
 import { Invoice, CreateInvoiceInput, InvoiceStatus } from '../domain/entities';
 
+export interface FindInvoicesFilter {
+  supplierId?: string;
+  buyerId?: string;
+  status?: InvoiceStatus;
+  limit?: number;
+  offset?: number;
+}
+
 export interface IInvoiceRepository {
 findById(id: string):                        Promise<Invoice | null>;
 findByInvoiceNumber(number: string):         Promise<Invoice | null>;
 findBySupplierId(supplierId: string):        Promise<Invoice[]>;
+findAll(filter: FindInvoicesFilter):         Promise<Invoice[]>;
 save(input: CreateInvoiceInput):             Promise<Invoice>;
 updateStatus(
     id: string,
@@ -108,5 +117,50 @@ async updateStatus(
     throw new Error(`Invoice ${id} not found during status update`);
     }
     return result.rows[0]!;
+}
+
+// ---------------------------------------------------------
+// findAll
+// Role-scoped query supporting status filter and pagination.
+// ---------------------------------------------------------
+async findAll(filter: FindInvoicesFilter): Promise<Invoice[]> {
+    const conditions: string[] = [];
+    const values: (string | number)[] = [];
+    let paramIndex = 1;
+
+    if (filter.supplierId) {
+        conditions.push(`supplier_id = $${paramIndex++}`);
+        values.push(filter.supplierId);
+    }
+
+    if (filter.buyerId) {
+        conditions.push(`buyer_id = $${paramIndex++}`);
+        values.push(filter.buyerId);
+    }
+
+    if (filter.status) {
+        conditions.push(`status = $${paramIndex++}`);
+        values.push(filter.status);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = filter.limit ?? 20;
+    const offset = filter.offset ?? 0;
+
+    values.push(limit);
+    const limitParam = `$${paramIndex++}`;
+
+    values.push(offset);
+    const offsetParam = `$${paramIndex++}`;
+
+    const query = `
+        SELECT * FROM invoices
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT ${limitParam} OFFSET ${offsetParam}
+    `;
+
+    const result = await this.pool.query<Invoice>(query, values);
+    return result.rows;
 }
 }

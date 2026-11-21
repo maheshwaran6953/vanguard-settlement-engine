@@ -42,6 +42,8 @@ tags:
     description: Virtual Account Numbers and payment settlement
   - name: Admin
     description: Platform administration (platform_admin role required)
+  - name: Organisations
+    description: Organisation directory and lookup
 
 paths:
 
@@ -133,6 +135,60 @@ paths:
               schema: { $ref: '#/components/schemas/RateLimitError' }
 
   /invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      description: |
+        Returns invoices scoped to the authenticated caller's role:
+        - Suppliers see invoices where they are the supplier.
+        - Buyers see invoices where they are the buyer.
+        - Platform admins see all invoices.
+        Supports status filtering and pagination (limit, offset).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [DRAFT, SUBMITTED, BUYER_APPROVED, FINANCING_REQUESTED, FUNDED, REPAID, DEFAULTED, CANCELLED]
+          description: Optional filter by invoice status
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+          description: Maximum number of records to return
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+          description: Number of records to skip
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Invoice' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
     post:
       tags: [Invoices]
       summary: Submit a new invoice
@@ -520,6 +576,40 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /organisations:
+    get:
+      tags: [Organisations]
+      summary: List organisations by role
+      description: Returns id and legal_name only. Never returns credentials or password hashes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [buyer, supplier, platform]
+            default: buyer
+          description: Filter organisations by role (default buyer)
+      responses:
+        '200':
+          description: Organisation list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/SuccessResponse' }
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrganisationSummary' }
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
 components:
 
   securitySchemes:
@@ -565,6 +655,12 @@ components:
             code:                { type: string, example: TOO_MANY_LOGIN_ATTEMPTS }
             message:             { type: string }
             retry_after_seconds: { type: integer, example: 900 }
+
+    OrganisationSummary:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        legal_name: { type: string }
 
     RegisterRequest:
       type: object

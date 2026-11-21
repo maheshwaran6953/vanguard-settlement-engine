@@ -50,7 +50,11 @@ export async function apiRequest<T>(
   if (response.status === 401) {
     clearAuthStorage();
     if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-      window.location.href = '/login';
+      try {
+        window.location.href = '/login';
+      } catch {
+        // Ignored in test environments where jsdom navigation is not implemented
+      }
     }
   }
 

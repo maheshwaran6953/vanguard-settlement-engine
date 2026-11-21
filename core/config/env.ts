@@ -26,6 +26,7 @@ const envSchema = z.object({
     SMTP_HOST:              z.string().min(1),
     SMTP_PORT:              z.coerce.number().int().positive(),
     SMTP_FROM:              z.string().email(),
+    CORS_ORIGIN:            z.string().default('http://localhost:5173'),
 });
 
 const parsed = envSchema.safeParse(process.env);

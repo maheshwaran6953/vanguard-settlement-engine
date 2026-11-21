@@ -43,7 +43,6 @@ const signature = crypto
   .digest('hex');
 
 console.log('\n=== WEBHOOK SIGNING UTILITY ===\n');
-console.log('Secret (first 8 chars):', secret.slice(0, 8) + '...');
 console.log('\nPayload (copy this EXACTLY into Thunder Client body):');
 console.log(body);
 console.log('\nX-Webhook-Signature header value:');

@@ -199,6 +199,52 @@ containing `HMAC-SHA256(secret, raw_body)`. The raw body is captured
 before `express.json()` parses it. Signature comparison uses
 `crypto.timingSafeEqual` to prevent timing attacks.
 
+#### Manual Webhook Verification
+
+To test the payment webhook manually with `curl`, read `WEBHOOK_SECRET` securely from `infra/config/.env.development` without logging or printing it:
+
+**Bash / POSIX:**
+```bash
+# 1. Read secret securely into environment variable without printing
+WEBHOOK_SECRET=$(node -e "const env = require('dotenv').parse(require('fs').readFileSync('infra/config/.env.development')); process.stdout.write(env.WEBHOOK_SECRET || '');")
+
+# 2. Define minified payload (e.g. partial payment of 6,000.00 INR / 600000 paise)
+PAYLOAD='{"account_number":"VSE123456789012","amount_cents":600000,"idempotency_key":"manual_test_part_1","paid_at":"2026-07-01T10:00:00.000Z"}'
+
+# 3. Compute HMAC-SHA256 signature
+SIGNATURE=$(node -e "const crypto = require('crypto'); process.stdout.write(crypto.createHmac('sha256', process.env.WEBHOOK_SECRET).update(Buffer.from(process.argv[1], 'utf8')).digest('hex'));" "$PAYLOAD")
+
+# 4. Dispatch webhook request
+curl -s -X POST http://localhost:3000/vans/webhook/payment \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: $SIGNATURE" \
+  -d "$PAYLOAD"
+```
+
+**PowerShell (Windows):**
+```powershell
+# 1. Read secret securely without printing
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$secret = (Get-Content "infra/config/.env.development" | Where-Object { $_ -match "^WEBHOOK_SECRET=(.+)" } | ForEach-Object { $matches[1] }).Trim()
+
+# 2. Define minified payload
+$payload = '{"account_number":"VSE123456789012","amount_cents":600000,"idempotency_key":"manual_test_part_1","paid_at":"2026-07-01T10:00:00.000Z"}'
+
+# 3. Compute signature and clear secret variable
+$hmac = [System.Security.Cryptography.HMACSHA256]::new($utf8NoBom.GetBytes($secret))
+$sigBytes = $hmac.ComputeHash($utf8NoBom.GetBytes($payload))
+$signature = [BitConverter]::ToString($sigBytes).Replace("-", "").ToLower()
+Remove-Variable secret
+
+# 4. Dispatch webhook request (write UTF-8 without BOM to preserve exact byte fidelity)
+[System.IO.File]::WriteAllText("$pwd/payload.json", $payload, $utf8NoBom)
+curl.exe -s -X POST http://localhost:3000/vans/webhook/payment `
+  -H "Content-Type: application/json" `
+  -H "X-Webhook-Signature: $signature" `
+  --data-binary "@$pwd/payload.json"
+Remove-Item -Force "$pwd/payload.json"
+```
+
 ---
 
 ## Technology Stack

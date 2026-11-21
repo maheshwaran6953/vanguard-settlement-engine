@@ -1,5 +1,5 @@
 @baseUrl = http://localhost:3000
-@secret = vanguard-webhook-secret-dev-32-chars-min
+@secret = {{$dotenv WEBHOOK_SECRET}}
 
 ### Test 1: No signature (expect 401)
 POST {{baseUrl}}/vans/webhook/payment

@@ -51,7 +51,7 @@ docker-compose up -d
 
 # 3. Configure environment
 cp infra/config/.env.development infra/config/.env.local
-# Edit .env.local with your secrets
+# Edit .env.local with your secrets (Note: CORS_ORIGIN expects a single origin string, e.g. http://localhost:5173)
 
 # 4. Start the HTTP server
 npm run dev

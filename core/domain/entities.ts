@@ -15,7 +15,7 @@ export type InvoiceStatus =
 | 'DEFAULTED'
 | 'CANCELLED';
 
-export type VanStatus  = 'active' | 'settled' | 'expired';
+export type VanStatus  = 'active' | 'settled' | 'expired' | 'partially_settled' | 'over_paid';
 export type EntryType  = 'debit' | 'credit';
 
 // ----------------------------------------------------------

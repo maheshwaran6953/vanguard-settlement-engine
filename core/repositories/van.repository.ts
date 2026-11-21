@@ -1,5 +1,5 @@
 import { Pool, PoolClient }  from 'pg';
-import { VirtualAccount, LedgerEntry } from '../domain/entities';
+import { VirtualAccount, LedgerEntry, VanStatus } from '../domain/entities';
 
 export interface CreateVanInput {
   invoice_id:            string;
@@ -27,6 +27,11 @@ export interface IVanRepository {
     client?: PoolClient
   ): Promise<VirtualAccount>;
   settleAccount(id: string, client?: PoolClient):     Promise<VirtualAccount>;
+  updateStatus(
+    id: string,
+    status: VanStatus,
+    client?: PoolClient
+  ): Promise<VirtualAccount>;
   appendLedgerEntry(
     input: CreateLedgerEntryInput,
     client?: PoolClient
@@ -111,6 +116,25 @@ export class VanRepository implements IVanRepository {
        WHERE id = $1
        RETURNING *`,
       [id]
+    );
+    if (!result.rows[0]) {
+      throw new Error(`VirtualAccount ${id} not found`);
+    }
+    return result.rows[0]!;
+  }
+
+  async updateStatus(
+    id: string,
+    status: VanStatus,
+    client?: PoolClient
+  ): Promise<VirtualAccount> {
+    const runner = client ?? this.pool;
+    const result = await runner.query<VirtualAccount>(
+      `UPDATE virtual_accounts
+       SET status = $1
+       WHERE id = $2
+       RETURNING *`,
+      [status, id]
     );
     if (!result.rows[0]) {
       throw new Error(`VirtualAccount ${id} not found`);

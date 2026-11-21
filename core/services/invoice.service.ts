@@ -342,7 +342,10 @@ export class InvoiceService {
   // Read-only. Returns the invoice with its full audit trail.
   // No transaction needed — reads are non-destructive.
   // ----------------------------------------------------------------
-  async getInvoiceHistory(invoiceId: string): Promise<InvoiceWithHistory> {
+  async getInvoiceHistory(
+    invoiceId: string,
+    caller?: JwtPayload
+  ): Promise<InvoiceWithHistory> {
     const [invoice, events] = await Promise.all([
       this.invoiceRepo.findById(invoiceId),
       this.eventRepo.findByInvoiceId(invoiceId),
@@ -350,6 +353,18 @@ export class InvoiceService {
 
     if (!invoice) {
       throw new InvoiceNotFoundError(invoiceId);
+    }
+
+    if (caller) {
+      const isSupplier = caller.role === 'supplier' && invoice.supplier_id === caller.sub;
+      const isBuyer = caller.role === 'buyer' && invoice.buyer_id === caller.sub;
+      const isAdmin = caller.role === 'platform_admin';
+
+      if (!isSupplier && !isBuyer && !isAdmin) {
+        throw new UnauthorisedActorError(
+          'You do not have permission to view this invoice'
+        );
+      }
     }
 
     return { invoice, events };

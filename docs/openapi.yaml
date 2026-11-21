@@ -246,6 +246,9 @@ paths:
     get:
       tags: [Invoices]
       summary: Get invoice with full audit trail
+      description: |
+        Returns an invoice with its complete event audit trail.
+        Access is restricted to the invoice's supplier, the designated buyer, or platform administrators.
       security:
         - bearerAuth: []
       parameters:
@@ -267,6 +270,16 @@ paths:
                           events:
                             type: array
                             items: { $ref: '#/components/schemas/InvoiceEvent' }
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Actor is not the designated supplier, buyer, or platform admin
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404':
           description: Invoice not found
           content:

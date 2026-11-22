@@ -90,3 +90,52 @@ export interface AuthUser {
   orgId: string;
   legalName: string;
 }
+
+export interface InvoiceEvent {
+  id: string;
+  invoice_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  actor_id: string | null;
+  occurred_at: string;
+}
+
+export interface InvoiceWithHistory {
+  invoice: Invoice;
+  events: InvoiceEvent[];
+}
+
+export type VanStatus = 'active' | 'partially_settled' | 'settled' | 'over_paid' | 'expired';
+
+export interface VirtualAccount {
+  id: string;
+  invoice_id: string;
+  account_number: string;
+  ifsc_code: string;
+  expected_amount_cents: string;
+  received_amount_cents: string;
+  status: VanStatus;
+  expires_at: string;
+  created_at?: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  virtual_account_id: string;
+  entry_type: 'debit' | 'credit';
+  amount_cents: string;
+  description: string;
+  idempotency_key: string;
+  created_at: string;
+}
+
+export interface VanWithLedger {
+  virtual_account: VirtualAccount;
+  ledger_entries: LedgerEntry[];
+  is_fully_settled: boolean;
+}
+
+export interface ApproveInvoiceInput {
+  buyer_signature: string;
+}
+

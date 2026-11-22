@@ -30,19 +30,26 @@ async function cleanDatabase(): Promise<void> {
   `);
 }
 
+let gstinCounter = 1;
+
 async function registerOrg(
   name: string,
   role: 'supplier' | 'buyer',
   email: string
 ): Promise<{ token: string; id: string }> {
+  const payload: Record<string, unknown> = {
+    legal_name: name,
+    role,
+    email,
+    password: 'TestPassword123!',
+  };
+  if (role === 'supplier') {
+    payload.gstin = `00TESTSUPPLIER${(gstinCounter++ % 10)}`;
+  }
+
   const res = await api
     .post('/auth/register')
-    .send({
-      legal_name: name,
-      role,
-      email,
-      password: 'TestPassword123!',
-    });
+    .send(payload);
 
   if (res.status !== 201) {
     throw new Error(`Registration failed: ${JSON.stringify(res.body)}`);

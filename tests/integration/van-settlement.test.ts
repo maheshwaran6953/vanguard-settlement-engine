@@ -30,6 +30,8 @@ async function cleanDatabase(): Promise<void> {
   `);
 }
 
+let vanGstinCounter = 1;
+
 async function setupInvoiceAndVan(amountCents: number): Promise<{
   invoiceId:     string;
   vanId:         string;
@@ -39,6 +41,7 @@ async function setupInvoiceAndVan(amountCents: number): Promise<{
 }> {
   const supRes = await api.post('/auth/register').send({
     legal_name: 'Test Supplier ' + Date.now() + Math.random(),
+    gstin:      `00TESTSUPPLIER${(vanGstinCounter++ % 10)}`,
     role:       'supplier',
     email:      `sup-${Date.now()}-${Math.floor(Math.random() * 100000)}@test.com`,
     password:   'TestPassword123!',

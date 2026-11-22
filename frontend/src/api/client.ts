@@ -95,10 +95,11 @@ export async function apiRequest<T>(
       response.status,
       errorDetail.details,
       retryAfterSeconds,
+      errorDetail.message,
     );
   }
 
-  return json.data;
+  return (json as any).data !== undefined ? (json as any).data : (json as unknown as T);
 }
 
 export const apiClient = {
@@ -111,5 +112,8 @@ export const apiClient = {
       method: 'POST',
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+  },
+  delete<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    return apiRequest<T>(endpoint, { ...options, method: 'DELETE' });
   },
 };

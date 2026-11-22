@@ -139,3 +139,29 @@ export interface ApproveInvoiceInput {
   buyer_signature: string;
 }
 
+export interface FailedJobSummary {
+  id: string | undefined;
+  queue: string;
+  job_name: string;
+  failed_reason: string;
+  attempts_made: number;
+  failed_at: number | undefined;
+  payload: unknown;
+}
+
+export interface FailedJobsData {
+  count: number;
+  jobs: FailedJobSummary[];
+}
+
+export interface FailedJobsResponse {
+  success: boolean;
+  data: FailedJobsData;
+}
+
+export interface AdminActionResponse {
+  success: boolean;
+  message: string;
+}
+
+

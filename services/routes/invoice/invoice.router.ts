@@ -52,7 +52,10 @@ invoiceRouter.get(
   '/:id',
   authenticate,
   asyncHandler(async (req, res) => {
-    const result = await invoiceService.getInvoiceHistory(req.params.id as string);
+    const result = await invoiceService.getInvoiceHistory(
+      req.params.id as string,
+      req.user!
+    );
     res.status(200).json({ success: true, data: result });
   })
 );

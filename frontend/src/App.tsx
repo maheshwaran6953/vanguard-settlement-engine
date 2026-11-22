@@ -10,8 +10,8 @@ import { SupplierDashboard } from './pages/dashboards/SupplierDashboard';
 import { SubmitInvoicePage } from './pages/supplier/SubmitInvoicePage';
 import { BuyerDashboard } from './pages/dashboards/BuyerDashboard';
 import { PlatformAdminDashboard } from './pages/dashboards/PlatformAdminDashboard';
-import { ApproveInvoicePage } from './pages/ApproveInvoicePage';
-import { InvoiceDetailPage } from './pages/InvoiceDetailPage';
+import { ApproveInvoicePage } from './pages/buyer/ApproveInvoicePage';
+import { InvoiceDetailPage } from './pages/invoices/InvoiceDetailPage';
 
 const RoleBasedRedirect: React.FC = () => {
   const { user } = useAuth();

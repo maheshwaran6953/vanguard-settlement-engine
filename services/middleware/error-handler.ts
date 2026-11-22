@@ -19,6 +19,7 @@ import {
   VanNotFoundError,
   VanAlreadyExistsError,
   DuplicatePaymentError,
+  RiskAssessmentNotApprovedError,
 } from '../../core/services/van.service';
 
 import {
@@ -77,6 +78,11 @@ export function errorHandler(
 
   if (err instanceof VanAlreadyExistsError) {
     send(res, 409, 'VAN_ALREADY_EXISTS', err.message);
+    return;
+  }
+
+  if (err instanceof RiskAssessmentNotApprovedError) {
+    send(res, 409, 'RISK_ASSESSMENT_NOT_APPROVED', err.message);
     return;
   }
 

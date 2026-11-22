@@ -13,6 +13,8 @@ import { createLogger }       from '../utils/logger';
 import { JOB_TYPES }           from '../../infra/queue/registry';
 import { SettlementReceiptPdfPayload } from '../../infra/queue/job-payloads';
 
+import { InvoiceNotFoundError } from './invoice.service';
+
 const log = createLogger('VanService');
 
 // PostgreSQL unique violation error code
@@ -39,6 +41,17 @@ constructor(invoiceId: string) {
 }
 }
 
+export class RiskAssessmentNotApprovedError extends Error {
+constructor(invoiceId: string, decision?: string) {
+    super(
+      decision
+        ? `Invoice ${invoiceId} has risk decision '${decision}', requires 'APPROVE' for virtual account creation`
+        : `Invoice ${invoiceId} has not completed risk assessment with decision 'APPROVE'`
+    );
+    this.name = 'RiskAssessmentNotApprovedError';
+}
+}
+
 
 export class VanService {
     constructor(
@@ -60,21 +73,44 @@ export class VanService {
 async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
     log.info({ invoice_id: cmd.invoice_id }, 'Creating VAN for invoice');
 
-    const invoice = await this.invoiceRepo.findById(cmd.invoice_id);
+    const client = await pool.connect();
+
+    try {
+    await client.query('BEGIN');
+
+    const invoice = await this.invoiceRepo.findByIdForUpdate(cmd.invoice_id, client);
     if (!invoice) {
-    throw new Error(`Invoice not found: ${cmd.invoice_id}`);
+      throw new InvoiceNotFoundError(cmd.invoice_id);
     }
 
     if (invoice.status !== 'FINANCING_REQUESTED') {
-    throw new Error(
+      throw new Error(
         `Cannot create VAN for invoice in status: ${invoice.status}. ` +
         `Invoice must be in FINANCING_REQUESTED status.`
-    );
+      );
     }
 
     const existing = await this.vanRepo.findByInvoiceId(cmd.invoice_id);
     if (existing) {
-    throw new VanAlreadyExistsError(cmd.invoice_id);
+      throw new VanAlreadyExistsError(cmd.invoice_id);
+    }
+
+    // Verify stored risk decision of APPROVE under the invoice row lock
+    const riskEventRes = await client.query<{ event_type: string; payload: any }>(
+      `SELECT event_type, payload FROM invoice_events
+       WHERE invoice_id = $1 AND event_type LIKE 'risk.assessment.%'
+       ORDER BY occurred_at DESC, id DESC
+       LIMIT 1`,
+      [cmd.invoice_id]
+    );
+
+    if (riskEventRes.rows.length === 0) {
+      throw new RiskAssessmentNotApprovedError(cmd.invoice_id);
+    }
+
+    const latestRisk = riskEventRes.rows[0]!;
+    if (latestRisk.event_type !== 'risk.assessment.approve' || latestRisk.payload?.decision !== 'APPROVE') {
+      throw new RiskAssessmentNotApprovedError(cmd.invoice_id, latestRisk.payload?.decision ?? latestRisk.event_type);
     }
 
     const accountNumber = this.generateAccountNumber();
@@ -82,11 +118,6 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 90);
-
-    const client = await pool.connect();
-
-    try {
-    await client.query('BEGIN');
 
     const van = await this.vanRepo.create(
         {

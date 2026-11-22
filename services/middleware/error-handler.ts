@@ -4,6 +4,7 @@ import { ZodError }                        from 'zod';
 import {
   InvoiceNotFoundError,
   UnauthorisedActorError,
+  InvalidCounterpartyError,
 } from '../../core/services/invoice.service';
 
 import { InvalidTransitionError }
@@ -79,6 +80,11 @@ export function errorHandler(
 
   if (err instanceof AccountInactiveError) {
     send(res, 401, 'ACCOUNT_INACTIVE', err.message);
+    return;
+  }
+
+  if (err instanceof InvalidCounterpartyError) {
+    send(res, 400, 'INVALID_COUNTERPARTY', err.message);
     return;
   }
 

@@ -6,7 +6,13 @@ export const RegisterSchema = z.object({
   role:       z.enum(['supplier', 'buyer']),
   email:      z.string().email().trim(),
   password:   z.string().min(8),
-});
+}).refine(
+  (data) => data.role !== 'supplier' || (typeof data.gstin === 'string' && data.gstin.trim().length > 0),
+  {
+    message: 'GSTIN is required for suppliers',
+    path: ['gstin'],
+  }
+);
 
 export const LoginSchema = z.object({
   email:    z.string().email().trim(),

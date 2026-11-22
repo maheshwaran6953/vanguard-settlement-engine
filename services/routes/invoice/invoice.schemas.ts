@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Accepting it from the request body would allow a supplier to submit invoices
 // on behalf of another org, which is a privilege escalation vulnerability.
 export const SubmitInvoiceSchema = z.object({
-  invoice_number: z.string().min(1).max(50).trim(),
+  invoice_number: z.string().trim().min(1).max(50),
   buyer_id:       z.string().uuid().trim(),
   amount_cents:   z.number().int().positive(),
   currency:       z.string().length(3).default('INR'),

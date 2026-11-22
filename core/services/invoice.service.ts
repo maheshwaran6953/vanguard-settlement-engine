@@ -168,17 +168,6 @@ export class InvoiceService {
     actorId: string
   ): Promise<Invoice> {
 
-    const invoice = await this.invoiceRepo.findById(cmd.invoice_id);
-    if (!invoice) throw new InvoiceNotFoundError(cmd.invoice_id);
-
-    if (invoice.buyer_id !== cmd.buyer_id) {
-      throw new UnauthorisedActorError(
-        'Only the designated buyer can approve this invoice'
-      );
-    }
-
-    assertValidTransition(invoice.status, 'BUYER_APPROVED');
-
     if (!cmd.buyer_signature || cmd.buyer_signature.length < 10) {
       throw new Error('A valid buyer signature is required for approval');
     }
@@ -188,16 +177,28 @@ export class InvoiceService {
     try {
       await client.query('BEGIN');
 
+      const invoice = await this.invoiceRepo.findByIdForUpdate(cmd.invoice_id, client);
+      if (!invoice) throw new InvoiceNotFoundError(cmd.invoice_id);
+
+      if (invoice.buyer_id !== cmd.buyer_id) {
+        throw new UnauthorisedActorError(
+          'Only the designated buyer can approve this invoice'
+        );
+      }
+
+      assertValidTransition(invoice.status, 'BUYER_APPROVED');
+
+      const approved = await this.invoiceRepo.updateStatus(
+        invoice.id, 'BUYER_APPROVED', client, 'SUBMITTED'
+      );
+
       await client.query(
         `UPDATE invoices
          SET buyer_signature = $1, updated_at = now()
          WHERE id = $2`,
         [cmd.buyer_signature, invoice.id]
       );
-
-      const approved = await this.invoiceRepo.updateStatus(
-        invoice.id, 'BUYER_APPROVED', client
-      );
+      approved.buyer_signature = cmd.buyer_signature;
 
       await this.eventRepo.append(
         {
@@ -283,29 +284,29 @@ export class InvoiceService {
     cmd: RequestFinancingCommand,
     actorId: string
   ): Promise<Invoice> {
-
-    const invoice = await this.invoiceRepo.findById(cmd.invoice_id);
-    if (!invoice) {
-      throw new InvoiceNotFoundError(cmd.invoice_id);
-    }
-
-    if (invoice.supplier_id !== cmd.supplier_id) {
-      throw new UnauthorisedActorError(
-        'Only the invoice supplier can request financing'
-      );
-    }
-
-    assertValidTransition(invoice.status, 'FINANCING_REQUESTED');
-
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
+      const invoice = await this.invoiceRepo.findByIdForUpdate(cmd.invoice_id, client);
+      if (!invoice) {
+        throw new InvoiceNotFoundError(cmd.invoice_id);
+      }
+
+      if (invoice.supplier_id !== cmd.supplier_id) {
+        throw new UnauthorisedActorError(
+          'Only the invoice supplier can request financing'
+        );
+      }
+
+      assertValidTransition(invoice.status, 'FINANCING_REQUESTED');
+
       const updated = await this.invoiceRepo.updateStatus(
         invoice.id,
         'FINANCING_REQUESTED',
-        client
+        client,
+        'BUYER_APPROVED'
       );
 
       await this.eventRepo.append(

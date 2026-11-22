@@ -1,8 +1,30 @@
 import { Request, Response, NextFunction } from 'express';
+import { createHash }                       from 'crypto';
 import { idempotencyRepository }           from '../../core/database/container';
 import { createLogger }                    from '../../core/utils/logger';
 
 const log = createLogger('IdempotencyMiddleware');
+
+export function canonicalizeJson(obj: unknown): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalizeJson).join(',') + ']';
+  }
+  const record = obj as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${canonicalizeJson(record[k])}`);
+  return '{' + entries.join(',') + '}';
+}
+
+export function computeRequestFingerprint(body: unknown): string {
+  if (body === undefined || body === null) {
+    return createHash('sha256').update('').digest('hex');
+  }
+  const canonical = canonicalizeJson(body);
+  return createHash('sha256').update(canonical).digest('hex');
+}
 
 // ----------------------------------------------------------------
 // Maximum time we wait for a PROCESSING request to complete
@@ -74,6 +96,7 @@ if (!req.user) {
 
 const orgId = req.user.sub;
 const path  = req.path;
+const incomingFingerprint = computeRequestFingerprint(req.body);
 
 log.debug(
     { idempotency_key: idempotencyKey, org_id: orgId, path },
@@ -83,7 +106,8 @@ log.debug(
 const { record, isNew } = await idempotencyRepository.tryInsert(
     idempotencyKey,
     orgId,
-    path
+    path,
+    incomingFingerprint
 );
 
 // ── New request: first time this key has been seen ─────────────
@@ -126,6 +150,22 @@ if (isNew) {
     return;
 }
 
+// ── Key already exists — compare stored fingerprint (QA-002) ──
+if (record.request_fingerprint && record.request_fingerprint !== incomingFingerprint) {
+    log.warn(
+        { idempotency_key: idempotencyKey, org_id: orgId, path },
+        'Idempotency key reused with mismatched request body'
+    );
+    res.status(422).json({
+        success: false,
+        error: {
+            code:    'IDEMPOTENCY_KEY_REUSED',
+            message: 'This Idempotency-Key was already used with a different request.',
+        },
+    });
+    return;
+}
+
 // ── Key already exists — handle by current status ──────────────
 
 // COMPLETED: return the cached response immediately
@@ -152,7 +192,7 @@ if (record.status === 'FAILED') {
     // Delete the failed record so tryInsert creates a fresh one
     await idempotencyRepository.deleteKey(idempotencyKey, orgId, path);
     const fresh = await idempotencyRepository.tryInsert(
-    idempotencyKey, orgId, path
+    idempotencyKey, orgId, path, incomingFingerprint
     );
 
     // Attach the same response-capture wrapper as the new request path

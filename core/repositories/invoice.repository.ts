@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { Invoice, CreateInvoiceInput, InvoiceStatus } from '../domain/entities';
+import { InvalidTransitionError } from '../services/invoice/state-machine';
 
 export interface FindInvoicesFilter {
   supplierId?: string;
@@ -11,6 +12,7 @@ export interface FindInvoicesFilter {
 
 export interface IInvoiceRepository {
 findById(id: string):                        Promise<Invoice | null>;
+findByIdForUpdate(id: string, client: PoolClient): Promise<Invoice | null>;
 findByInvoiceNumber(number: string):         Promise<Invoice | null>;
 findBySupplierId(supplierId: string):        Promise<Invoice[]>;
 findAll(filter: FindInvoicesFilter):         Promise<Invoice[]>;
@@ -18,7 +20,8 @@ save(input: CreateInvoiceInput):             Promise<Invoice>;
 updateStatus(
     id: string,
     status: InvoiceStatus,
-    client?: PoolClient              // accepts a transaction client
+    client?: PoolClient,              // accepts a transaction client
+    expectedStatus?: InvoiceStatus   // conditional update guard
 ): Promise<Invoice>;
 }
 
@@ -33,6 +36,19 @@ constructor(private readonly pool: Pool) {}
 async findById(id: string): Promise<Invoice | null> {
     const result = await this.pool.query<Invoice>(
     `SELECT * FROM invoices WHERE id = $1 LIMIT 1`,
+    [id]
+    );
+    return result.rows[0] ?? null;
+}
+
+// ---------------------------------------------------------
+// findByIdForUpdate
+// Locks the row within the transaction using SELECT ... FOR UPDATE.
+// Returns null if not found.
+// ---------------------------------------------------------
+async findByIdForUpdate(id: string, client: PoolClient): Promise<Invoice | null> {
+    const result = await client.query<Invoice>(
+    `SELECT * FROM invoices WHERE id = $1 FOR UPDATE LIMIT 1`,
     [id]
     );
     return result.rows[0] ?? null;
@@ -95,26 +111,45 @@ async save(input: CreateInvoiceInput): Promise<Invoice> {
 // ---------------------------------------------------------
 // updateStatus
 // Accepts an optional PoolClient for transactional use.
-// When the Saga pattern runs in Step 5, every status update
-// must participate in the same DB transaction. This optional
-// client parameter is how we enable that without changing
-// the interface.
+// When expectedStatus is passed, makes the status update conditional:
+// UPDATE invoices SET status = $new WHERE id = $id AND status = $expected.
+// If zero rows are updated, throws InvalidTransitionError (409).
 // ---------------------------------------------------------
 async updateStatus(
     id: string,
     status: InvoiceStatus,
-    client?: PoolClient
+    client?: PoolClient,
+    expectedStatus?: InvoiceStatus
 ): Promise<Invoice> {
     const runner = client ?? this.pool;
-    const result = await runner.query<Invoice>(
-    `UPDATE invoices
-    SET status = $1, updated_at = now()
-    WHERE id = $2
-    RETURNING *`,
-    [status, id]
-    );
+    let query: string;
+    let params: unknown[];
+
+    if (expectedStatus) {
+      query = `UPDATE invoices
+               SET status = $1, updated_at = now()
+               WHERE id = $2 AND status = $3
+               RETURNING *`;
+      params = [status, id, expectedStatus];
+    } else {
+      query = `UPDATE invoices
+               SET status = $1, updated_at = now()
+               WHERE id = $2
+               RETURNING *`;
+      params = [status, id];
+    }
+
+    const result = await runner.query<Invoice>(query, params);
     if (!result.rows[0]) {
-    throw new Error(`Invoice ${id} not found during status update`);
+      if (expectedStatus) {
+        const currentRes = await runner.query<{ status: InvoiceStatus }>(
+          `SELECT status FROM invoices WHERE id = $1`,
+          [id]
+        );
+        const currentStatus = currentRes.rows[0]?.status ?? expectedStatus;
+        throw new InvalidTransitionError(currentStatus, status);
+      }
+      throw new Error(`Invoice ${id} not found during status update`);
     }
     return result.rows[0]!;
 }

@@ -58,13 +58,12 @@ export const Sidebar: React.FC = () => {
               <span>Dashboard</span>
             </NavLink>
             <div className="pt-3 pb-1 px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Settlement (M5)
+              Settlement
             </div>
-            <div className="flex items-center space-x-3 px-3 py-2 text-sm text-slate-400 cursor-not-allowed">
+            <NavLink to="/buyer" className={linkClass}>
               <CheckSquare className="w-4 h-4" />
-              <span>Approvals</span>
-              <span className="ml-auto text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Soon</span>
-            </div>
+              <span>Approvals & Invoices</span>
+            </NavLink>
           </>
         )}
 

@@ -107,9 +107,6 @@ async function setupInvoiceAndVan(amountCents: number): Promise<{
     .set('Authorization', `Bearer ${supplierToken}`)
     .send({ invoice_id: invoiceId, expected_amount_cents: amountCents });
 
-  // Invoice transitions to FUNDED upon disbursement of advance
-  await pool.query("UPDATE invoices SET status = 'FUNDED' WHERE id = $1", [invoiceId]);
-
   return {
     invoiceId,
     vanId:         vanRes.body.data.id as string,

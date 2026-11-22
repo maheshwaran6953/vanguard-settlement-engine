@@ -14,7 +14,7 @@ export const SubmitInvoiceSchema = z.object({
 // buyer_id is intentionally absent — extracted from JWT.
 // buyer_signature is the only field the buyer provides.
 export const ApproveInvoiceSchema = z.object({
-  buyer_signature: z.string().min(10).trim(),
+  buyer_signature: z.string().trim().min(10).max(1024),
 });
 
 // supplier_id is intentionally absent — extracted from JWT.

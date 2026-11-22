@@ -7,6 +7,7 @@ export class ApiClientError extends Error {
     public readonly status: number,
     public readonly details?: Record<string, string[]>,
     public readonly retryAfterSeconds?: number,
+    public readonly serverMessage?: string,
   ) {
     super(readableMessage);
     this.name = 'ApiClientError';

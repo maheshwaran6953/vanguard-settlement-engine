@@ -376,9 +376,7 @@ export class InvoiceService {
       const isAdmin = caller.role === 'platform_admin';
 
       if (!isSupplier && !isBuyer && !isAdmin) {
-        throw new UnauthorisedActorError(
-          'You do not have permission to view this invoice'
-        );
+        throw new InvoiceNotFoundError(invoiceId);
       }
     }
 

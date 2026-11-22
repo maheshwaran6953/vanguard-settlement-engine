@@ -77,7 +77,8 @@ vanRouter.get(
   asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoiceId as string;
     const result = await vanService.getVanDetails(
-      invoiceId.trim()
+      invoiceId.trim(),
+      req.user
     );
     res.status(200).json({ success: true, data: result });
   })

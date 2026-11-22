@@ -99,6 +99,14 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
         client
     );
 
+    // Transition invoice to FUNDED upon disbursement of advance
+    await this.invoiceRepo.updateStatus(
+        cmd.invoice_id,
+        'FUNDED',
+        client,
+        'FINANCING_REQUESTED'
+    );
+
     // Record the disbursement debit — money going OUT of the
     // platform's capital pool to the supplier as an advance.
     await this.vanRepo.appendLedgerEntry(

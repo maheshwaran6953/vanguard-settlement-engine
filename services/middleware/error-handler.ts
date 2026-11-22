@@ -108,6 +108,15 @@ export function errorHandler(
     return;
   }
 
+  if (
+    (typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === '22P02') ||
+    (typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code: unknown }).code === 'string' && (err as { code: string }).code.startsWith('22')) ||
+    (err instanceof Error && err.message.includes('invalid input syntax'))
+  ) {
+    send(res, 400, 'INVALID_INPUT', 'Invalid input syntax for parameter');
+    return;
+  }
+
   if (err instanceof Error) {
     send(res, 400, 'BAD_REQUEST', err.message);
     return;

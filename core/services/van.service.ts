@@ -14,6 +14,7 @@ import { JOB_TYPES }           from '../../infra/queue/registry';
 import { SettlementReceiptPdfPayload } from '../../infra/queue/job-payloads';
 
 import { InvoiceNotFoundError } from './invoice.service';
+import { assertValidTransition } from './invoice/state-machine';
 
 const log = createLogger('VanService');
 
@@ -96,12 +97,7 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
       throw new AmountMismatchError(cmd.expected_amount_cents, Number(invoice.amount_cents));
     }
 
-    if (invoice.status !== 'FINANCING_REQUESTED') {
-      throw new Error(
-        `Cannot create VAN for invoice in status: ${invoice.status}. ` +
-        `Invoice must be in FINANCING_REQUESTED status.`
-      );
-    }
+    assertValidTransition(invoice.status, 'FUNDED');
 
     const existing = await this.vanRepo.findByInvoiceId(cmd.invoice_id);
     if (existing) {

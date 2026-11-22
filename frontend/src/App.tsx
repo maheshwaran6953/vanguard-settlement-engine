@@ -10,6 +10,8 @@ import { SupplierDashboard } from './pages/dashboards/SupplierDashboard';
 import { SubmitInvoicePage } from './pages/supplier/SubmitInvoicePage';
 import { BuyerDashboard } from './pages/dashboards/BuyerDashboard';
 import { PlatformAdminDashboard } from './pages/dashboards/PlatformAdminDashboard';
+import { ApproveInvoicePage } from './pages/ApproveInvoicePage';
+import { InvoiceDetailPage } from './pages/InvoiceDetailPage';
 
 const RoleBasedRedirect: React.FC = () => {
   const { user } = useAuth();
@@ -73,6 +75,22 @@ export default function App(): React.ReactElement {
               element={
                 <ProtectedRoute allowedRoles={['buyer']}>
                   <BuyerDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="buyer/invoices/:id/approve"
+              element={
+                <ProtectedRoute allowedRoles={['buyer']}>
+                  <ApproveInvoicePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="invoices/:id"
+              element={
+                <ProtectedRoute allowedRoles={['supplier', 'buyer', 'platform_admin']}>
+                  <InvoiceDetailPage />
                 </ProtectedRoute>
               }
             />

@@ -1,24 +1,26 @@
 import { Pool } from 'pg';
 
 export interface IdempotencyRecord {
-id:               string;
-idempotency_key:  string;
-org_id:           string;
-request_path:     string;
-request_method:   string;
-status:           'PROCESSING' | 'COMPLETED' | 'FAILED';
-response_status:  number | null;
-response_body:    Record<string, unknown> | null;
-expires_at:       Date;
-created_at:       Date;
-updated_at:       Date;
+id:                  string;
+idempotency_key:     string;
+org_id:              string;
+request_path:        string;
+request_method:      string;
+request_fingerprint: string | null;
+status:              'PROCESSING' | 'COMPLETED' | 'FAILED';
+response_status:     number | null;
+response_body:       Record<string, unknown> | null;
+expires_at:          Date;
+created_at:          Date;
+updated_at:          Date;
 }
 
 export interface IIdempotencyRepository {
 tryInsert(
-    key:    string,
-    orgId:  string,
-    path:   string
+    key:          string,
+    orgId:        string,
+    path:         string,
+    fingerprint?: string | null
 ): Promise<{ record: IdempotencyRecord; isNew: boolean }>;
 
 markCompleted(
@@ -56,18 +58,19 @@ constructor(private readonly pool: Pool) {}
 // the UNIQUE constraint is enforced at the DB engine level.
 // ----------------------------------------------------------------
 async tryInsert(
-    key:   string,
-    orgId: string,
-    path:  string
+    key:         string,
+    orgId:       string,
+    path:        string,
+    fingerprint?: string | null
 ): Promise<{ record: IdempotencyRecord; isNew: boolean }> {
 
     try {
     const result = await this.pool.query<IdempotencyRecord>(
         `INSERT INTO idempotency_keys
-        (idempotency_key, org_id, request_path)
-        VALUES ($1, $2, $3)
+        (idempotency_key, org_id, request_path, request_fingerprint)
+        VALUES ($1, $2, $3, $4)
         RETURNING *`,
-        [key, orgId, path]
+        [key, orgId, path, fingerprint ?? null]
     );
     return { record: result.rows[0]!, isNew: true };
 

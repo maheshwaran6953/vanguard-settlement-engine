@@ -4,6 +4,7 @@ import { ZodError }                        from 'zod';
 import {
   InvoiceNotFoundError,
   UnauthorisedActorError,
+  InvalidCounterpartyError,
 } from '../../core/services/invoice.service';
 
 import { InvalidTransitionError }
@@ -82,6 +83,11 @@ export function errorHandler(
     return;
   }
 
+  if (err instanceof InvalidCounterpartyError) {
+    send(res, 400, 'INVALID_COUNTERPARTY', err.message);
+    return;
+  }
+
   if (err instanceof UnauthorisedActorError) {
     send(res, 403, 'FORBIDDEN', err.message);
     return;
@@ -99,6 +105,15 @@ export function errorHandler(
 
   if (err instanceof DuplicatePaymentError) {
     send(res, 409, 'DUPLICATE_PAYMENT', err.message);
+    return;
+  }
+
+  if (
+    (typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === '22P02') ||
+    (typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code: unknown }).code === 'string' && (err as { code: string }).code.startsWith('22')) ||
+    (err instanceof Error && err.message.includes('invalid input syntax'))
+  ) {
+    send(res, 400, 'INVALID_INPUT', 'Invalid input syntax for parameter');
     return;
   }
 

@@ -39,6 +39,7 @@ const res = await api
     .post('/auth/register')
     .send({
     legal_name: 'Resilience Test Supplier',
+    gstin:      '00TESTSUPPLIER1',
     role:       'supplier',
     email,
     password:   'TestPass123!',

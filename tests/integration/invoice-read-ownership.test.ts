@@ -30,19 +30,26 @@ async function cleanDatabase(): Promise<void> {
   `);
 }
 
+let gstinCounter = 1;
+
 async function registerOrg(
   name: string,
   role: 'supplier' | 'buyer',
   email: string
 ): Promise<{ token: string; id: string }> {
+  const payload: Record<string, unknown> = {
+    legal_name: name,
+    role,
+    email,
+    password: 'TestPassword123!',
+  };
+  if (role === 'supplier') {
+    payload.gstin = `00TESTSUPPLIER${(gstinCounter++ % 10)}`;
+  }
+
   const res = await api
     .post('/auth/register')
-    .send({
-      legal_name: name,
-      role,
-      email,
-      password: 'TestPassword123!',
-    });
+    .send(payload);
 
   if (res.status !== 201) {
     throw new Error(`Registration failed: ${JSON.stringify(res.body)}`);
@@ -141,26 +148,26 @@ describe('Module M5a: Invoice Read Ownership (GET /invoices/:id)', () => {
     expect(Array.isArray(res.body.data.events)).toBe(true);
   });
 
-  it('a different supplier gets 403', async () => {
+  it('a different supplier gets 404', async () => {
     const res = await api
       .get(`/invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${supplierB.token}`)
-      .expect(403);
+      .expect(404);
 
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('FORBIDDEN');
-    expect(res.body.error.message).toBe('You do not have permission to view this invoice');
+    expect(res.body.error.code).toBe('INVOICE_NOT_FOUND');
+    expect(res.body.error.message).toBe(`Invoice not found: ${invoiceId}`);
   });
 
-  it('a different buyer gets 403', async () => {
+  it('a different buyer gets 404', async () => {
     const res = await api
       .get(`/invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${buyerB.token}`)
-      .expect(403);
+      .expect(404);
 
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('FORBIDDEN');
-    expect(res.body.error.message).toBe('You do not have permission to view this invoice');
+    expect(res.body.error.code).toBe('INVOICE_NOT_FOUND');
+    expect(res.body.error.message).toBe(`Invoice not found: ${invoiceId}`);
   });
 
   it('platform_admin can read it (200)', async () => {

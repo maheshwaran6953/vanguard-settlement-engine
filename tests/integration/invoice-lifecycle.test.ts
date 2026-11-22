@@ -55,6 +55,7 @@ async function registerAndLogin(
     .post('/auth/register')
     .send({
       legal_name: 'Alpha Tech Pvt Ltd',
+      gstin:      '00TESTSUPPLIER1',
       role:       'supplier',
       email:      supplierEmail,
       password:   'TestPassword123!',

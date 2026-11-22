@@ -40,6 +40,13 @@ export class UnauthorisedActorError extends Error {
   }
 }
 
+export class InvalidCounterpartyError extends Error {
+  constructor(message: string = 'Counterparty organisation must exist and have org_type buyer') {
+    super(message);
+    this.name = 'InvalidCounterpartyError';
+  }
+}
+
 // ------------------------------------------------------------------
 // Valid state machine transitions.
 // This is the enforcement layer for your invoice_status enum.
@@ -81,6 +88,13 @@ export class InvoiceService {
 
     if (cmd.due_date <= new Date()) {
       throw new Error('Due date must be in the future');
+    }
+
+    const buyer = await this.orgRepo.findById(cmd.buyer_id);
+    if (!buyer || buyer.org_type !== 'buyer') {
+      throw new InvalidCounterpartyError(
+        'Counterparty organisation must exist and have org_type buyer'
+      );
     }
 
     const existing = await this.invoiceRepo.findByInvoiceNumber(
@@ -362,9 +376,7 @@ export class InvoiceService {
       const isAdmin = caller.role === 'platform_admin';
 
       if (!isSupplier && !isBuyer && !isAdmin) {
-        throw new UnauthorisedActorError(
-          'You do not have permission to view this invoice'
-        );
+        throw new InvoiceNotFoundError(invoiceId);
       }
     }
 

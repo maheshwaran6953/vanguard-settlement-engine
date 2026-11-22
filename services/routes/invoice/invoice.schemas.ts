@@ -4,7 +4,7 @@ import { z } from 'zod';
 // Accepting it from the request body would allow a supplier to submit invoices
 // on behalf of another org, which is a privilege escalation vulnerability.
 export const SubmitInvoiceSchema = z.object({
-  invoice_number: z.string().min(1).max(50).trim(),
+  invoice_number: z.string().trim().min(1).max(50),
   buyer_id:       z.string().uuid().trim(),
   amount_cents:   z.number().int().positive(),
   currency:       z.string().length(3).default('INR'),
@@ -14,7 +14,7 @@ export const SubmitInvoiceSchema = z.object({
 // buyer_id is intentionally absent — extracted from JWT.
 // buyer_signature is the only field the buyer provides.
 export const ApproveInvoiceSchema = z.object({
-  buyer_signature: z.string().min(10).trim(),
+  buyer_signature: z.string().trim().min(10).max(1024),
 });
 
 // supplier_id is intentionally absent — extracted from JWT.

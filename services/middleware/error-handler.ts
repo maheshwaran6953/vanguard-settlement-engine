@@ -10,8 +10,10 @@ import {
 import { InvalidTransitionError }
   from '../../core/services/invoice/state-machine';
 
-import { InvoiceNotEligibleError }
-  from '../../core/services/risk/risk.service';
+import {
+  InvoiceNotEligibleError,
+  InvoiceAlreadyAssessedError,
+} from '../../core/services/risk/risk.service';
 
 import {
   VanNotFoundError,
@@ -65,6 +67,11 @@ export function errorHandler(
 
   if (err instanceof InvoiceNotEligibleError) {
     send(res, 409, 'INVOICE_NOT_ELIGIBLE', err.message);
+    return;
+  }
+
+  if (err instanceof InvoiceAlreadyAssessedError) {
+    send(res, 409, 'INVOICE_ALREADY_ASSESSED', err.message);
     return;
   }
 

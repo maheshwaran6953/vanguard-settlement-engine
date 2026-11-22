@@ -52,6 +52,15 @@ constructor(invoiceId: string, decision?: string) {
 }
 }
 
+export class AmountMismatchError extends Error {
+constructor(expected: number, actual: number) {
+    super(
+      `expected_amount_cents (${expected}) must equal invoice amount_cents (${actual})`
+    );
+    this.name = 'AmountMismatchError';
+}
+}
+
 
 export class VanService {
     constructor(
@@ -81,6 +90,10 @@ async createVan(cmd: CreateVanCommand): Promise<VirtualAccount> {
     const invoice = await this.invoiceRepo.findByIdForUpdate(cmd.invoice_id, client);
     if (!invoice) {
       throw new InvoiceNotFoundError(cmd.invoice_id);
+    }
+
+    if (cmd.expected_amount_cents !== Number(invoice.amount_cents)) {
+      throw new AmountMismatchError(cmd.expected_amount_cents, Number(invoice.amount_cents));
     }
 
     if (invoice.status !== 'FINANCING_REQUESTED') {

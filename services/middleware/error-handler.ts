@@ -20,6 +20,7 @@ import {
   VanAlreadyExistsError,
   DuplicatePaymentError,
   RiskAssessmentNotApprovedError,
+  AmountMismatchError,
 } from '../../core/services/van.service';
 
 import {
@@ -83,6 +84,11 @@ export function errorHandler(
 
   if (err instanceof RiskAssessmentNotApprovedError) {
     send(res, 409, 'RISK_ASSESSMENT_NOT_APPROVED', err.message);
+    return;
+  }
+
+  if (err instanceof AmountMismatchError) {
+    send(res, 400, 'AMOUNT_MISMATCH', err.message);
     return;
   }
 

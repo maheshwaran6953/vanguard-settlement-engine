@@ -82,7 +82,7 @@ export function verifyWebhookSignature(
   next: NextFunction
 ): void {
 
-  if (env.NODE_ENV === 'test') {
+  if (env.NODE_ENV === 'test' && !req.headers['x-webhook-signature']) {
     next();
     return;
   }
@@ -143,7 +143,7 @@ export function verifyWebhookSignature(
       success: false,
       error: {
         code:    'INVALID_WEBHOOK_SIGNATURE',
-        message: `FAILED. Expected: ${expectedSignature}`,
+        message: 'Webhook signature verification failed',
       },
     });
     return;

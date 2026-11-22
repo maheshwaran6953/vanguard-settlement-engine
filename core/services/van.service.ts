@@ -15,6 +15,7 @@ import { SettlementReceiptPdfPayload } from '../../infra/queue/job-payloads';
 
 import { InvoiceNotFoundError } from './invoice.service';
 import { assertValidTransition } from './invoice/state-machine';
+import { JwtPayload } from '../domain/auth.types';
 
 const log = createLogger('VanService');
 
@@ -443,19 +444,40 @@ async recordPayment(cmd: RecordPaymentCommand): Promise<VanWithLedger> {
 
 // ----------------------------------------------------------------
 // getVanDetails — read-only reconciliation view
+//
+// QA-021: Access restricted to invoice supplier, buyer, or platform_admin.
+// Any other caller receives VanNotFoundError (404) to avoid revealing existence.
 // ----------------------------------------------------------------
-async getVanDetails(invoiceId: string): Promise<VanWithLedger> {
+async getVanDetails(
+  invoiceId: string,
+  caller?: JwtPayload
+): Promise<VanWithLedger> {
+    const invoice = await this.invoiceRepo.findById(invoiceId);
+    if (!invoice) {
+      throw new VanNotFoundError(invoiceId);
+    }
+
+    if (caller) {
+      const isSupplier = caller.role === 'supplier' && invoice.supplier_id === caller.sub;
+      const isBuyer    = caller.role === 'buyer' && invoice.buyer_id === caller.sub;
+      const isAdmin    = caller.role === 'platform_admin';
+
+      if (!isSupplier && !isBuyer && !isAdmin) {
+        throw new VanNotFoundError(invoiceId);
+      }
+    }
+
     const van = await this.vanRepo.findByInvoiceId(invoiceId);
     if (!van) {
-    throw new VanNotFoundError(invoiceId);
+      throw new VanNotFoundError(invoiceId);
     }
 
     const ledgerEntries = await this.vanRepo.getLedgerEntries(van.id);
 
     return {
-    virtual_account:  van,
-    ledger_entries:   ledgerEntries,
-    is_fully_settled: van.status === 'settled',
+      virtual_account:  van,
+      ledger_entries:   ledgerEntries,
+      is_fully_settled: van.status === 'settled',
     };
 }
 

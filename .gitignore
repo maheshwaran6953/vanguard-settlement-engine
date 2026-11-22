@@ -143,3 +143,5 @@ scripts/force-pdf.ts
 
 # Test coverage
 coverage/
+
+scratch/

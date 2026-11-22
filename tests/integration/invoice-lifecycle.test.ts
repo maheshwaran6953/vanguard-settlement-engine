@@ -256,7 +256,7 @@ describe('Invoice Financing Lifecycle — Grand Tour', () => {
       [invoiceId]
     );
 
-    expect(invoiceRow.rows[0]!.status).toBe('FINANCING_REQUESTED');
+    expect(invoiceRow.rows[0]!.status).toBe('FUNDED');
     expect(invoiceRow.rows[0]!.buyer_signature).toBe(
       'sha256-integration-test-buyer-signature-abc'
     );

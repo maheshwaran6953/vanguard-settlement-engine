@@ -26,4 +26,10 @@ export const AssessRiskSchema = z.object({
     days_until_due:           z.number().int().min(0),
     prior_default_count:      z.number().int().min(0),
   }),
-});
+}).refine(
+  (data) => data.three_way_match_input.invoice_id === data.invoice_id,
+  {
+    message: 'three_way_match_input.invoice_id must match top-level invoice_id',
+    path: ['three_way_match_input', 'invoice_id'],
+  }
+);

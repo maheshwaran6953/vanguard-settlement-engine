@@ -10,13 +10,17 @@ import {
 import { InvalidTransitionError }
   from '../../core/services/invoice/state-machine';
 
-import { InvoiceNotEligibleError }
-  from '../../core/services/risk/risk.service';
+import {
+  InvoiceNotEligibleError,
+  InvoiceAlreadyAssessedError,
+} from '../../core/services/risk/risk.service';
 
 import {
   VanNotFoundError,
   VanAlreadyExistsError,
   DuplicatePaymentError,
+  RiskAssessmentNotApprovedError,
+  AmountMismatchError,
 } from '../../core/services/van.service';
 
 import {
@@ -68,8 +72,23 @@ export function errorHandler(
     return;
   }
 
+  if (err instanceof InvoiceAlreadyAssessedError) {
+    send(res, 409, 'INVOICE_ALREADY_ASSESSED', err.message);
+    return;
+  }
+
   if (err instanceof VanAlreadyExistsError) {
     send(res, 409, 'VAN_ALREADY_EXISTS', err.message);
+    return;
+  }
+
+  if (err instanceof RiskAssessmentNotApprovedError) {
+    send(res, 409, 'RISK_ASSESSMENT_NOT_APPROVED', err.message);
+    return;
+  }
+
+  if (err instanceof AmountMismatchError) {
+    send(res, 400, 'AMOUNT_MISMATCH', err.message);
     return;
   }
 
